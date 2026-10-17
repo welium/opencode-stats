@@ -15,6 +15,12 @@ function catalog(cost: unknown) {
 const rates = { input: 2, output: 8, cache_read: 0.5, cache_write: 3 };
 const zero = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 };
 
+function modelCatalog(models: Record<string, unknown>) {
+  return parseCatalog(JSON.stringify({ updatedAt: 1_700_000_000_000, body: JSON.stringify({
+    provider: { id: 'provider', models: Object.fromEntries(Object.entries(models).map(([id, cost]) => [id, { id, cost }])) },
+  }) }));
+}
+
 describe('offline estimates', () => {
   it('prices disjoint input, visible output + reasoning, and both cache categories by hand', () => {
     const original = step();
@@ -37,6 +43,101 @@ describe('offline estimates', () => {
     const missing = estimateCost([step()], catalog({ input: 2, output: 8, cache_read: 0.5 }));
     assert.equal(missing.status, 'unavailable');
     assert.equal(missing.unpricedByReason['missing-rate'], 1);
+  });
+
+  it('estimates free variants at paid base rates, overriding explicit free variant rates', () => {
+    for (const pricing of [catalog(rates), modelCatalog({ model: rates, 'model-free': { input: 0, output: 0, cache_read: 0, cache_write: 0 } })]) {
+      const original = step({ model: 'model-free', cost: 0 });
+      const result = estimateCost([original], pricing);
+      assert.equal(result.status, 'complete');
+      assert.equal(result.cost, .00365);
+      assert.equal(original.model, 'model-free');
+      assert.equal(original.cost, 0);
+    }
+    assert.equal(estimateCost([step({ model: 'model-free' })], modelCatalog({ 'model-free': rates })).unpricedByReason['no-model-price'], 1);
+  });
+
+  it('uses published model-specific Fast and Ultrafast multipliers on all token categories', () => {
+    for (const [model, multiplier] of [
+      ['gpt-6.1-sol-fast', 2], ['gpt-6-astra-fast', 2],
+      ['gpt-6.1-sol-ultrafast', 6], ['gpt-6-astra-ultrafast', 6],
+      ['gpt-5.5-fast', 2.5], ['gpt-5-mini-fast', 1.8],
+      ['gpt-4.1-fast', 1.75], ['gpt-4o-fast', 1.7],
+      ['gpt-4o-mini-fast', 5 / 3], ['o4-mini-fast', 20 / 11],
+      ['gpt-6.1-sol-fast-free', 2],
+    ] as const) {
+      const baseId = model.replace(/-free$/, '').replace(/-(ultrafast|fast)$/, '');
+      const result = estimateCost([step({ model })], modelCatalog({ [baseId]: rates }));
+      assert.equal(result.status, 'complete', model);
+      assert.equal(result.cost, .00365 * multiplier, model);
+    }
+  });
+
+  it('applies variant multipliers after selecting the context tier', () => {
+    const pricing = modelCatalog({ 'gpt-6.1-sol': { input: 1, tiers: [
+      { tier: { type: 'context', size: 1000 }, input: 2 },
+    ] } });
+    for (const [suffix, multiplier] of [['free', 1], ['fast', 2], ['ultrafast', 6]] as const) {
+      assert.equal(estimateCost([step({ ...zero, input: 1000, model: `gpt-6.1-sol-${suffix}` })], pricing).cost, .001 * multiplier);
+      assert.equal(estimateCost([step({ ...zero, input: 1001, model: `gpt-6.1-sol-${suffix}` })], pricing).cost, .002002 * multiplier);
+    }
+  });
+
+  it('does not invent variant prices or bypass provider, identity, or token validation', () => {
+    const pricing = modelCatalog({ 'gpt-6.1-sol': rates, model: rates });
+    for (const model of ['model-fast', 'model-ultrafast', 'gpt-5-ultrafast', 'gpt-6.1-sol-free-other']) {
+      assert.equal(estimateCost([step({ model })], pricing).unpricedByReason['no-model-price'], 1);
+    }
+    assert.equal(estimateCost([step({ provider: 'other', model: 'gpt-6.1-sol-fast' })], pricing).unpricedByReason['no-model-price'], 1);
+    assert.equal(estimateCost([step({ model: 'gpt-6.1-sol-free', input: null })], pricing).unpricedByReason['missing-tokens'], 1);
+    assert.equal(estimateCost([step({ model: 'model-free' })], modelCatalog({ model: { input: 2 } })).unpricedByReason['missing-rate'], 1);
+    const conflicting = catalog(rates);
+    const provider = conflicting.providers!['provider'] as { models: { model: { id: string } } };
+    provider.models.model.id = 'model-free';
+    assert.equal(estimateCost([step({ model: 'model-free' })], conflicting).unpricedByReason['no-model-price'], 1);
+  });
+
+  it('searches both OpenCode providers for base models in either direction', () => {
+    for (const [source, target] of [['opencode', 'opencode-go'], ['opencode-go', 'opencode']] as const) {
+      for (const sourcePresent of [false, true]) {
+        const pricing = parseCatalog(JSON.stringify({ updatedAt: 0, body: JSON.stringify({
+          ...(sourcePresent ? { [source]: { id: source, models: {} } } : {}),
+          [target]: { id: target, models: {
+            'muse-spark-1.3-contributor': { id: 'muse-spark-1.3-contributor', cost: { input: .1, output: .2, cache_read: .002 } },
+            'gpt-6.1-sol': { id: 'gpt-6.1-sol', cost: rates },
+          } },
+        }) }));
+        for (const model of ['muse-spark-1.3-contributor', 'muse-spark-1.3-contributor-free']) {
+          const original = step({ ...zero, provider: source, model, input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cost: 0 });
+          const result = estimateCost([original], pricing);
+          assert.equal(result.status, 'complete');
+          assert.equal(result.cost, .302);
+          assert.equal(original.provider, source);
+          assert.equal(original.model, model);
+          assert.equal(original.cost, 0);
+        }
+        assert.equal(estimateCost([step({ provider: source, model: 'gpt-6.1-sol-fast' })], pricing).cost, .00365 * 2);
+        assert.equal(estimateCost([step({ provider: 'other', model: 'muse-spark-1.3-contributor-free' })], pricing).unpricedByReason['no-model-price'], 1);
+      }
+    }
+  });
+
+  it('prefers the original OpenCode provider and does not hide invalid identities or rates', () => {
+    for (const source of ['opencode', 'opencode-go']) {
+      const target = source === 'opencode' ? 'opencode-go' : 'opencode';
+      for (const [entry, expected] of [
+        [{ id: source, models: { model: { id: 'model', cost: rates } } }, .00365],
+        [{ id: source, models: { model: { id: 'model', cost: { input: -1 } } } }, null],
+        [{ id: 'wrong', models: {} }, null],
+        [{ id: source, models: { model: { id: 'wrong', cost: rates } } }, null],
+      ] as const) {
+        const pricing = parseCatalog(JSON.stringify({ updatedAt: 0, body: JSON.stringify({
+          [source]: entry,
+          [target]: { id: target, models: { model: { id: 'model', cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } } } },
+        }) }));
+        assert.equal(estimateCost([step({ provider: source, model: 'model-free' })], pricing).cost, expected);
+      }
+    }
   });
 
   it('uses strict full-context tier boundaries including cache writes and the highest tier', () => {

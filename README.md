@@ -216,7 +216,21 @@ inside the response's read transaction. Its JSON envelope must contain a numeric
 missing entries, or malformed catalogs leave recorded usage available. No catalog
 refresh, provider discovery, or external request is performed.
 
-Provider/model keys and explicit IDs must match exactly. Prices are finite,
+Provider/model keys and explicit IDs must match exactly, except for billing
+suffixes: `-free` uses the paid base model's rates, even if
+the free variant has explicit zero prices. Only `opencode` and `opencode-go`
+search both providers: the original provider takes precedence, and the other is
+searched if the base model is absent. Other providers require an exact provider
+match. Invalid identities or rates do not trigger a fallback. OpenAI `-fast` and `-ultrafast`
+variants use that provider's base rates with OpenAI's published model-specific
+multipliers (for example, GPT-6.1 Sol: 2× Fast, 6× Ultrafast; GPT-5.5: 2.5× Fast).
+These multipliers also apply to cache rates and context tiers. A trailing `-free`
+may follow a speed suffix. Missing base models or unknown speed multipliers
+remain unpriced; recorded model IDs and costs are unchanged. Multiplier source:
+[OpenAI API pricing](https://developers.openai.com/api/docs/pricing), checked
+2026-10-17.
+
+Prices are finite,
 nonnegative USD per million tokens. Each step is priced as
 `(input*inputRate + (output+reasoning)*outputRate + cacheRead*cacheReadRate + cacheWrite*cacheWriteRate) / 1,000,000`.
 Context is `input + cacheRead + cacheWrite`. Base prices and `tiers` are supported;

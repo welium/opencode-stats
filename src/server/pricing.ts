@@ -44,14 +44,55 @@ export function loadPricingCatalog(runner: QueryRunner): PricingCatalog {
   return parseCatalog(row?.value);
 }
 
+// OpenAI Standard -> Fast price ratios, including cached tokens. Do not infer
+// a universal multiplier: older models and GPT-5.5 have different premiums.
+// https://developers.openai.com/api/docs/pricing (checked 2026-10-17)
+const fastMultipliers: Readonly<Record<string, number>> = {
+  'gpt-6-astra': 2, 'gpt-6.1-sol': 2, 'gpt-6-sol': 2, 'gpt-6-luna': 2,
+  'gpt-5.6-sol': 2, 'gpt-5.6-terra': 2, 'gpt-5.6-luna': 2,
+  'gpt-5.5': 2.5, 'gpt-5.4': 2, 'gpt-5.4-mini': 2,
+  'gpt-5.2': 2, 'gpt-5.1': 2, 'gpt-5': 2, 'gpt-5-mini': 1.8,
+  'gpt-4.1': 1.75, 'gpt-4.1-mini': 1.75, 'gpt-4.1-nano': 2,
+  'gpt-4o': 1.7, 'gpt-4o-2024-05-13': 1.75, 'gpt-4o-mini': 5 / 3,
+  'o3': 1.75, 'o4-mini': 20 / 11,
+};
+const ultrafastMultipliers: Readonly<Record<string, number>> = {
+  'gpt-6-astra': 6, 'gpt-6.1-sol': 6,
+};
+
 function priceStep(step: StepRow, catalog: PricingCatalog): number | EstimateUnpricedReason {
   const tokens = [step.input, step.output, step.reasoning, step.cacheRead, step.cacheWrite];
   if (tokens.some((value) => value === null || !Number.isFinite(value) || value < 0)) return 'missing-tokens';
   if (step.provider === null || step.model === null) return 'no-model-price';
-  const provider = object(own(catalog.providers, step.provider));
-  const model = object(own(object(provider?.['models']), step.model));
-  // Keys are the canonical identity. Conflicting explicit IDs are not aliases.
-  if (provider?.['id'] !== step.provider || model?.['id'] !== step.model) return 'no-model-price';
+  // These suffixes describe billing variants, not separate model identities.
+  // A free variant deliberately uses paid base rates, even if catalogued at $0.
+  let modelId = step.model;
+  if (modelId.endsWith('-free')) modelId = modelId.slice(0, -'-free'.length);
+  let multiplier = 1;
+  const variant = /-(ultrafast|fast)$/.exec(modelId);
+  if (variant !== null) {
+    modelId = modelId.slice(0, -variant[0].length);
+    const multipliers = variant[1] === 'fast' ? fastMultipliers : ultrafastMultipliers;
+    const published = own(multipliers, modelId);
+    if (typeof published !== 'number') return 'no-model-price';
+    multiplier = published;
+  }
+  const providerIds = step.provider === 'opencode' ? ['opencode', 'opencode-go']
+    : step.provider === 'opencode-go' ? ['opencode-go', 'opencode'] : [step.provider];
+  let model: ObjectValue | null = null;
+  for (const providerId of providerIds) {
+    const entry = own(catalog.providers, providerId);
+    if (entry === undefined) continue;
+    const provider = object(entry);
+    // Conflicting explicit IDs are not aliases, even within the OpenCode pair.
+    if (provider?.['id'] !== providerId) return 'no-model-price';
+    const candidate = own(object(provider['models']), modelId);
+    if (candidate === undefined) continue;
+    model = object(candidate);
+    if (model?.['id'] !== modelId) return 'no-model-price';
+    break;
+  }
+  if (model === null) return 'no-model-price';
   const base = model['cost'] === undefined ? {} : object(model['cost']);
   if (base === null) return 'no-model-price';
   const input = step.input!;
@@ -91,7 +132,8 @@ function priceStep(step: StepRow, catalog: PricingCatalog): number | EstimateUnp
     if (typeof rate !== 'number') return 'missing-rate';
     total += count * rate;
   }
-  return Number.isFinite(total) ? total / 1_000_000 : 'missing-rate';
+  const cost = total / 1_000_000 * multiplier;
+  return Number.isFinite(cost) ? cost : 'missing-rate';
 }
 
 export function estimateCost(steps: readonly StepRow[], catalog: PricingCatalog): CostEstimate {
