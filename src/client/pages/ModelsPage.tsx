@@ -9,6 +9,7 @@
  */
 
 import { useMemo } from 'react';
+import { tokenSortValue } from '../../shared/usage.ts';
 
 import type { ModelUsageRow } from '../../shared/api.ts';
 import type { ColumnSpec } from '../components/ui.tsx';
@@ -51,7 +52,7 @@ function sortValue(row: ModelUsageRow, key: string): SortValue {
     case 'sessions':
       return row.sessions;
     case 'tokens':
-      return row.usage.tokens.total ?? null;
+      return tokenSortValue(row.usage.tokens);
     case 'cacheRate':
       return row.usage.cacheRate;
     case 'cost':

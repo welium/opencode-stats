@@ -12,6 +12,8 @@
  */
 
 import type { MeasuredTotal, TokenTotals, UsageTotals } from '../shared/api.ts';
+import { measuredTokenSum } from '../shared/usage.ts';
+export { measuredTokenSum } from '../shared/usage.ts';
 
 /** Placeholder for a value that was not measured, not a zero. */
 export const UNAVAILABLE = '—';
@@ -136,7 +138,7 @@ export interface FormattedValue {
 
 /**
  * Format a `MeasuredTotal`. A null value is unavailable; an incomplete total
- * keeps a `≥` marker so a measured subtotal cannot read as a complete total.
+ * keeps the partial flag so the UI can mark a measured subtotal with an asterisk.
  */
 export function formatMeasured(
   total: MeasuredTotal | undefined,
@@ -146,24 +148,15 @@ export function formatMeasured(
   return { text: format(total.value), partial: !total.complete };
 }
 
-/** Sum of every token category that reported a value, or null when none did. */
-export function measuredTokenSum(tokens: TokenTotals): number | null {
-  const values = [tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite]
-    .map((category) => category.value)
-    .filter((value): value is number => value !== null);
-  if (values.length === 0) return null;
-  return values.reduce((sum, value) => sum + value, 0);
-}
-
 /**
  * Token total for a table cell. A complete total is exact; an incomplete one
- * becomes a labeled `≥` subtotal; nothing measurable is `—`.
+ * retains its partial flag for the asterisk; nothing measurable is `—`.
  */
 export function formatTokenTotal(tokens: TokenTotals, format: (value: number) => string = formatCompact): FormattedValue {
   if (tokens.total !== null) return { text: format(tokens.total), partial: false };
   const sum = measuredTokenSum(tokens);
   if (sum === null) return { text: UNAVAILABLE, partial: false };
-  return { text: `≥ ${format(sum)}`, partial: true };
+  return { text: format(sum), partial: true };
 }
 
 /** Token total plus recorded cost for one usage group, already formatted. */

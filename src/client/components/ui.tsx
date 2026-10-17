@@ -74,7 +74,7 @@ export function Stat(props: StatProps): React.ReactElement {
   );
 }
 
-/** A value cell for a tables: `—` when unavailable, `≥` when partial. */
+/** A value cell: `—` when unavailable, an asterisk when partial. */
 export function ValueCell(props: { value: FormattedValue; className?: string }): React.ReactElement {
   const unavailable = props.value.text === UNAVAILABLE;
   return (
@@ -82,7 +82,7 @@ export function ValueCell(props: { value: FormattedValue; className?: string }):
       className={`num ${props.className ?? ''}`.trim()}
       data-unavailable={unavailable}
       {...(props.value.partial
-        ? { title: 'Measured subtotal: some steps report no value for this metric' }
+        ? { title: PARTIAL_TOTAL_HINT, 'aria-label': `${props.value.text} (measured subtotal)` }
         : {})}
     >
       {props.value.text}
@@ -198,4 +198,3 @@ export function SortRow(props: {
     </tr>
   );
 }
-

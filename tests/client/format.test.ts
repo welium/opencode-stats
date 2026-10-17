@@ -162,8 +162,8 @@ describe('formatTokenTotal', () => {
 
   it('falls back to a labelled subtotal when the total is incomplete', () => {
     const partial = formatTokenTotal(tokens({ input: measured(4_000, true), output: measured(1_000, true) }));
-    assert.deepEqual(partial, { text: '≥ 5k', partial: true });
-    assert.match(partial.text, /^≥ /);
+    assert.deepEqual(partial, { text: '5k', partial: true });
+    assert.doesNotMatch(partial.text, /≥/);
   });
 
   it('reports unavailable instead of a zero subtotal', () => {

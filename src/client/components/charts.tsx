@@ -8,6 +8,7 @@
  *  - carries a text summary (`aria-label`) that states totals and the peak day,
  *  - labels its own axes in text rather than relying on hover tooltips,
  *  - keeps a visible caption with the same numbers the bars encode, and
+ *  - offers daily details on hover, touch, and keyboard focus, and
  *  - offers the underlying series as a real table for keyboard users.
  *
  * The bar geometry lives in a stretched `viewBox`, while every axis label is
@@ -16,7 +17,7 @@
  * their real size instead of being squashed with the geometry.
  */
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import type { CostEstimate, DailyActivityPoint, DailyEstimatePoint } from '../../shared/api.ts';
 import { EstimateValue } from './Estimate.tsx';
@@ -75,9 +76,22 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
   const { points, metric } = props;
   const height = props.height ?? 200;
   const [tableOpen, setTableOpen] = useState(false);
+  const [activeDate, setActiveDate] = useState<string | null>(null);
+  const tooltipId = useId();
 
   const estimates = new Map(props.estimates?.map((point) => [point.date, point.estimate]) ?? []);
   const values = points.map((point) => metricValue(point, metric, estimates.get(point.date)));
+  const activeIndex = points.findIndex((point) => point.date === activeDate);
+  const activePoint = points[activeIndex];
+  const activeEstimate = activePoint === undefined ? undefined : estimates.get(activePoint.date);
+  const detailLabel = activePoint === undefined ? undefined : `${activePoint.date}. ${formatInteger(activePoint.steps)} steps. ${formatInteger(activePoint.tokens)} tokens. Recorded cost ${formatCost(activePoint.cost)}. API-equivalent estimate ${formatCost(activeEstimate?.cost)}${activeEstimate?.status === 'partial' ? ', partial subtotal' : ''}.`;
+
+  function selectPointerDay(event: React.PointerEvent<HTMLDivElement>): void {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (bounds.width <= 0) return;
+    const index = Math.max(0, Math.min(points.length - 1, Math.floor(((event.clientX - bounds.left) / bounds.width) * points.length)));
+    setActiveDate(points[index]?.date ?? null);
+  }
   const measured = values.filter((value): value is number => value !== null);
   const missing = values.length - measured.length;
   const totalLabel = metric === 'estimate' && props.estimates?.some((point) => point.estimate.status !== 'complete')
@@ -104,13 +118,42 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
 
   return (
     <figure className="chart">
-      <div className="chart-plot" role="img" aria-label={summary}>
+      <div className="chart-plot" role="group" aria-label={summary}>
         <div className="chart-axis-y" aria-hidden="true" style={{ height: `${String(height)}px` }}>
           {gridValues.map((gridValue, index) => (
             <span key={`y-${String(index)}`}>{formatMetric(gridValue, metric)}</span>
           ))}
         </div>
-        <div className="chart-canvas">
+        <div
+          className="chart-canvas"
+          role={points.length === 0 ? undefined : 'slider'}
+          tabIndex={points.length === 0 ? undefined : 0}
+          aria-label={`${props.label}, daily details`}
+          aria-orientation="horizontal"
+          aria-valuemin={1}
+          aria-valuemax={Math.max(1, points.length)}
+          aria-valuenow={Math.max(0, activeIndex) + 1}
+          aria-valuetext={detailLabel ?? points[0]?.date}
+          aria-describedby={activePoint === undefined ? undefined : tooltipId}
+          onPointerMove={selectPointerDay}
+          onPointerDown={selectPointerDay}
+          onPointerLeave={(event) => {
+            if (event.pointerType !== 'touch' && document.activeElement !== event.currentTarget) setActiveDate(null);
+          }}
+          onFocus={() => setActiveDate((date) => date ?? points[0]?.date ?? null)}
+          onBlur={() => setActiveDate(null)}
+          onKeyDown={(event) => {
+            let index = Math.max(0, activeIndex);
+            if (event.key === 'Escape') { setActiveDate(null); return; }
+            if (event.key === 'ArrowRight' || event.key === 'ArrowUp') index++;
+            else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') index--;
+            else if (event.key === 'Home') index = 0;
+            else if (event.key === 'End') index = points.length - 1;
+            else return;
+            event.preventDefault();
+            setActiveDate(points[Math.max(0, Math.min(points.length - 1, index))]?.date ?? null);
+          }}
+        >
           <svg
             viewBox={`0 0 ${String(VIEW_WIDTH)} ${String(VIEW_HEIGHT)}`}
             width="100%"
@@ -123,6 +166,9 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
               const y = max <= 0 ? VIEW_HEIGHT : VIEW_HEIGHT - (gridValue / max) * VIEW_HEIGHT;
               return <line key={`grid-${String(index)}`} className="chart-grid-line" x1={0} y1={y} x2={VIEW_WIDTH} y2={y} />;
             })}
+            {activePoint === undefined ? null : (
+              <rect className="chart-day-highlight" x={activeIndex * slot} y={0} width={slot} height={VIEW_HEIGHT} />
+            )}
             {points.map((point, index) => {
               const value = values[index];
               if (value === null || value === undefined) return null;
@@ -136,9 +182,7 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
                   y={VIEW_HEIGHT - barHeight}
                   width={barWidth}
                   height={Math.max(0, barHeight)}
-                >
-                  <title>{`${point.date}: ${formatMetric(value, metric)}`}</title>
-                </rect>
+                />
               );
             })}
           </svg>
@@ -153,6 +197,22 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
               );
             })}
           </div>
+          {activePoint === undefined ? null : (
+            <div
+              id={tooltipId}
+              role="tooltip"
+              className="chart-tooltip"
+              style={{ left: `clamp(0px, calc(${String(((activeIndex + 0.5) / points.length) * 100)}% - 120px), max(0px, calc(100% - 240px)))` }}
+            >
+              <strong>{activePoint.date}</strong>
+              <dl>
+                <div><dt>Steps</dt><dd>{formatInteger(activePoint.steps)}</dd></div>
+                <div><dt>Tokens</dt><dd>{formatInteger(activePoint.tokens)}</dd></div>
+                <div><dt>Recorded cost</dt><dd>{formatCost(activePoint.cost)}</dd></div>
+                <div><dt>API-equivalent estimate</dt><dd><EstimateValue estimate={activeEstimate} /></dd></div>
+              </dl>
+            </div>
+          )}
         </div>
       </div>
 
@@ -237,6 +297,7 @@ export function ShareBar(props: { segments: readonly ShareSegment[]; title: stri
               background: segment.color,
             }}
             aria-hidden="true"
+            title={`${segment.label}: ${formatInteger(segment.value)} (${total > 0 ? `${((segment.value / total) * 100).toFixed(1)}%` : UNAVAILABLE})`}
           />
         ))}
       </div>

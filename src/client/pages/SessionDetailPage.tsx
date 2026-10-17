@@ -176,8 +176,8 @@ function SessionBody(props: {
             />
           </div>
 
-          <Card title="Daily activity" description={`Assistant steps per local date (${data.range.timezone}).`}>
-            <DailyActivityChart points={data.daily} estimates={data.dailyEstimates} metric="steps" label="Daily assistant steps" />
+          <Card title="Daily activity" description={`Tokens per local date (${data.range.timezone}).`}>
+            <DailyActivityChart points={data.daily} estimates={data.dailyEstimates} metric="tokens" label="Daily tokens" />
           </Card>
         </>
       )}

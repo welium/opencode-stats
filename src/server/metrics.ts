@@ -20,6 +20,7 @@
  */
 
 import { basename } from 'node:path';
+import { tokenSortValue } from '../shared/usage.ts';
 import type { DatabaseSync } from 'node:sqlite';
 
 import type {
@@ -932,8 +933,8 @@ export function compareUsage(
   left: { usage: UsageTotals; steps: number },
   right: { usage: UsageTotals; steps: number },
 ): number {
-  const leftTokens = left.usage.tokens.total ?? -1;
-  const rightTokens = right.usage.tokens.total ?? -1;
+  const leftTokens = tokenSortValue(left.usage.tokens) ?? -1;
+  const rightTokens = tokenSortValue(right.usage.tokens) ?? -1;
   if (leftTokens !== rightTokens) return rightTokens - leftTokens;
   const leftCost = left.usage.cost.value ?? -1;
   const rightCost = right.usage.cost.value ?? -1;

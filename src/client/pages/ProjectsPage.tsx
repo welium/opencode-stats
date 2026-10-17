@@ -8,6 +8,7 @@
  */
 
 import { useMemo } from 'react';
+import { tokenSortValue } from '../../shared/usage.ts';
 
 import type { ProjectUsageRow } from '../../shared/api.ts';
 import type { ColumnSpec } from '../components/ui.tsx';
@@ -44,7 +45,7 @@ function sortValue(row: ProjectUsageRow, key: string): SortValue {
     case 'steps':
       return row.steps;
     case 'tokens':
-      return row.usage.tokens.total ?? null;
+      return tokenSortValue(row.usage.tokens);
     case 'cost':
       return row.usage.cost.value ?? null;
     default:

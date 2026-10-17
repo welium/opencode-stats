@@ -39,6 +39,7 @@ import type {
 } from '../shared/api.ts';
 
 import { errorEnvelope } from './errors.ts';
+import { tokenSortValue } from '../shared/usage.ts';
 import { estimateCost, loadPricingCatalog } from './pricing.ts';
 import type { PricingCatalog } from './pricing.ts';
 import {
@@ -448,7 +449,7 @@ function buildTools(context: StatsContext, query: { range: ResolvedRange; projec
 // /api/sessions
 // ---------------------------------------------------------------------------
 
-function sessionSortValue(row: SessionListRow, sort: SessionSortKey): number | string {
+function sessionSortValue(row: SessionListRow, sort: SessionSortKey): number | string | null {
   switch (sort) {
     case 'updated':
       return row.timeUpdated;
@@ -461,9 +462,9 @@ function sessionSortValue(row: SessionListRow, sort: SessionSortKey): number | s
     case 'steps':
       return row.steps;
     case 'tokens':
-      return row.usage.tokens.total ?? -1;
+      return tokenSortValue(row.usage.tokens);
     case 'cost':
-      return row.usage.cost.value ?? -1;
+      return row.usage.cost.value;
   }
 }
 
@@ -475,6 +476,8 @@ function compareSessions(
 ): number {
   const first = sessionSortValue(left, sort);
   const second = sessionSortValue(right, sort);
+  if (first === null && second !== null) return 1;
+  if (second === null && first !== null) return -1;
   let ranked: number;
   if (typeof first === 'number' && typeof second === 'number') {
     ranked = first === second ? 0 : first < second ? -1 : 1;

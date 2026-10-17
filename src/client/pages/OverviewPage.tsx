@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { tokenSortValue } from '../../shared/usage.ts';
 
 import type { AgentUsageRow, ModelUsageRow, ProjectUsageRow, TokenTotals } from '../../shared/api.ts';
 import type { DailyMetric } from '../components/charts.tsx';
@@ -79,7 +80,7 @@ function agentSortValue(row: AgentUsageRow, key: string): SortValue {
     case 'steps':
       return row.steps;
     case 'tokens':
-      return row.usage.tokens.total ?? null;
+      return tokenSortValue(row.usage.tokens);
     case 'cost':
       return row.usage.cost.value ?? null;
     default:
@@ -101,7 +102,7 @@ function modelSortValue(row: ModelUsageRow, key: string): SortValue {
     case 'sessions':
       return row.sessions;
     case 'tokens':
-      return row.usage.tokens.total ?? null;
+      return tokenSortValue(row.usage.tokens);
     case 'cost':
       return row.usage.cost.value ?? null;
     default:
@@ -119,7 +120,7 @@ function projectSortValue(row: ProjectUsageRow, key: string): SortValue {
     case 'steps':
       return row.steps;
     case 'tokens':
-      return row.usage.tokens.total ?? null;
+      return tokenSortValue(row.usage.tokens);
     case 'cost':
       return row.usage.cost.value ?? null;
     default:
@@ -140,7 +141,7 @@ function tokenMix(tokens: TokenTotals): Array<{ key: string; label: string; colo
 export function OverviewPage(props: PageProps): React.ReactElement {
   const { rangeKey, refreshToken, route } = props;
   const projectId = route.query['projectId'] ?? null;
-  const [metric, setMetric] = useState<DailyMetric>('steps');
+  const [metric, setMetric] = useState<DailyMetric>('tokens');
   const agentSort = useSort('tokens', 'desc');
   const modelSort = useSort('tokens', 'desc');
   const projectSort = useSort('tokens', 'desc');

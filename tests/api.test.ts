@@ -247,13 +247,13 @@ describe('GET /api/stats/projects', () => {
       body.projects.map((row) => [row.projectId, row.label, row.sessions, row.steps, row.usage.tokens.total]),
       [
         ['proj-a', 'alpha', 2, 4, 1295],
+        ['proj-b', 'Beta Project', 2, 5, null],
         [null, 'Unknown project', 1, 2, 20],
         ['proj-c', 'gamma', 1, 0, 0],
-        ['proj-b', 'Beta Project', 2, 5, null],
       ],
     );
 
-    const projectB = body.projects[3];
+    const projectB = body.projects[1];
     assert.ok(projectB !== undefined);
     assert.equal(projectB.name, 'Beta Project');
     assert.equal(projectB.worktree, '/srv/work/beta');
