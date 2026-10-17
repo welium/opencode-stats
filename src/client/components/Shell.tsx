@@ -164,7 +164,7 @@ export function Shell(props: ShellProps): React.ReactElement {
 
         <div className="brand">
           <span className="brand-name">OpenCode Stats</span>
-          <span className="brand-sub">local, read-only</span>
+          <span className="brand-sub">Usage analytics</span>
         </div>
 
         <div className="topbar-actions">
@@ -216,7 +216,7 @@ export function Shell(props: ShellProps): React.ReactElement {
         aria-label="Pages"
         {...(narrow && !menuOpen ? { inert: true } : {})}
       >
-        <p className="nav-heading">Usage</p>
+        <p className="nav-heading">Workspace</p>
         {NAV_ITEMS.map((item) => {
           const active = activeName === item.name;
           return (
@@ -236,7 +236,8 @@ export function Shell(props: ShellProps): React.ReactElement {
           );
         })}
         <p className="nav-foot dim">
-          Range: <strong>{rangeLabel(props.rangeKey)}</strong>. Values update when you press Refresh.
+          <span className="nav-foot-label">Local &amp; read-only</span>
+          <span>{rangeLabel(props.rangeKey)} · Refresh to update</span>
         </p>
       </nav>
 
