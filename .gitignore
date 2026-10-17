@@ -1,0 +1,18 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Local environment / configuration
+.env
+.env.*
+*.local
+
+# Logs and coverage
+*.log
+npm-debug.log*
+coverage/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

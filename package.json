@@ -1,0 +1,33 @@
+{
+  "name": "opencode-stats-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only local usage dashboard for OpenCode, backed by OpenCode's SQLite database",
+  "engines": {
+    "node": ">=24.4.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.ts",
+    "build": "vite build",
+    "start": "node src/server/main.ts",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "typecheck": "npm run typecheck:server && npm run typecheck:client",
+    "typecheck:server": "tsc -p tsconfig.server.json",
+    "typecheck:client": "tsc -p tsconfig.client.json"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.4"
+  }
+}

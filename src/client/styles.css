@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* Local font stack only; no remote font or icon requests. */
+html {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
