@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Read-only local usage dashboard for OpenCode, backed by OpenCode's SQLite database",
   "engines": {
-    "node": ">=24.4.0"
+    "node": "^24.15.0"
   },
   "scripts": {
     "dev": "node scripts/dev.ts",

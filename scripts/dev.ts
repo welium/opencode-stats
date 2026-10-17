@@ -109,7 +109,7 @@ async function main(): Promise<number> {
   }
 
   const apiOrigin = `http://127.0.0.1:${String(apiPort)}`;
-  let vite: Awaited<ReturnType<typeof createViteServer>>;
+  let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;
   try {
     vite = await createViteServer({
       root: projectRoot,
@@ -123,6 +123,8 @@ async function main(): Promise<number> {
     await vite.listen();
   } catch (error) {
     process.stderr.write(`Cannot start the Vite development listener on ${host}:${String(port)}: ${(error as Error).message}\n`);
+    // A failed listen still owns Vite watchers; close them so startup failure exits.
+    await vite?.close();
     apiServer.close();
     database.close();
     return 1;
@@ -131,13 +133,14 @@ async function main(): Promise<number> {
   process.stdout.write(`API server listening on ${apiOrigin} (proxied at /api, read-only database)\n`);
   process.stdout.write(`Database: ${resolved.path} (${resolved.source}, read-only)\n`);
   process.stdout.write(`Dashboard: ${formatAddress(host, port)}\n`);
+  const developmentServer = vite;
 
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals): void => {
     if (shuttingDown) return;
     shuttingDown = true;
     process.stdout.write(`Received ${signal}, shutting down.\n`);
-    void vite.close().then(() => {
+    void developmentServer.close().then(() => {
       apiServer.close(() => {
         database.close();
         process.exit(0);

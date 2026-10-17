@@ -7,18 +7,24 @@ assets are bundled locally.
 
 The dashboard includes Overview, Models, Projects, Tools, Sessions with statistical
 detail, and Errors. Recorded assistant-step cost and offline API-equivalent
-estimates are separate values. Final operational verification is in progress.
+estimates are separate values.
 
 ## Requirements
 
-- Node.js **24.4 or newer** (the server runs `.ts` files directly through Node's
-  type stripping; there is no server build step)
+- Node.js **24 LTS, version 24.15 or newer within 24.x**. The SQLite connection
+  uses `limits.attach`, added in 24.15; older versions can silently ignore this
+  option. The server runs `.ts`
+  files directly through Node's type stripping; there is no server build step.
 - npm (for installing dependencies and running scripts)
+
+The minimum follows the [Node 24 SQLite API](https://nodejs.org/docs/latest-v24.x/api/sqlite.html),
+not just TypeScript support. Node's built-in SQLite and online backup API require
+no separately installed SQLite command-line tool.
 
 ## Install
 
 ```sh
-npm install
+npm ci
 ```
 
 A built dashboard runs offline. Dependencies are never installed at startup.
@@ -81,6 +87,12 @@ listener, and development host checking is disabled so a VPN or NAT hostname
 works without an extra flag. In development the API stays on loopback behind
 Vite's `/api` proxy.
 
+Development defaults to `127.0.0.1:5173`, with its API on `127.0.0.1:3848`.
+`--port` selects the browser port; `--api-port` selects the proxy's API port.
+Use Ctrl-C to stop either launcher; SIGTERM also shuts down both development
+listeners. Check `curl --fail http://127.0.0.1:3848/api/health` (or development
+port 5173) for `status: "ok"`. An unavailable database returns HTTP 503 instead.
+
 ## Database path resolution
 
 1. `--db <path>`
@@ -93,6 +105,56 @@ the XDG base directory specification requires. A relative `--db` or
 `OPENCODE_DB` path resolves against the working directory.
 
 Use `--db` to point at a backup: `npm run start -- --db /path/to/backup.db`.
+
+### Supported storage
+
+The adapter supports the SQLite layout inspected in OpenCode v2.0.28, not older
+JSON/JSONL storage. It probes `session_v2`, `session_message`, and `project`,
+including the required columns listed in `src/server/database.ts`. Extra columns
+are allowed; missing required columns produce an incompatible state. The optional
+`kv` catalog only affects estimates. Future or imported schemas and token formats
+are not assumed compatible; this tool never migrates them.
+
+### Safe inspection backup
+
+If live read-only access fails, use a consistent backup rather than granting the
+dashboard write access. The following POSIX-shell example writes only a new private
+temporary destination. Set `SOURCE_DB` to the database you want to inspect first;
+the default below is the usual Linux location. It uses SQLite's online backup API
+from a read-only source, so committed WAL data is included.
+
+```sh
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+case "$DATA_HOME" in /*) ;; *) DATA_HOME="$HOME/.local/share" ;; esac
+SOURCE_DB="${SOURCE_DB:-${OPENCODE_DB:-$DATA_HOME/opencode/opencode.db}}"
+export SOURCE_DB
+BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/opencode-stats.XXXXXXXX")
+chmod 700 "$BACKUP_DIR"
+export BACKUP_DIR
+node --input-type=module <<'JS'
+import { chmodSync } from 'node:fs';
+import { join } from 'node:path';
+import { DatabaseSync, backup } from 'node:sqlite';
+process.umask(0o077);
+const source = new DatabaseSync(process.env.SOURCE_DB, {
+  readOnly: true, allowExtension: false, timeout: 2500, limits: { attach: 0 },
+});
+try {
+  const destination = join(process.env.BACKUP_DIR, 'opencode.db');
+  await backup(source, destination);
+  chmodSync(destination, 0o600);
+} finally {
+  source.close();
+}
+JS
+npm run start -- --db "$BACKUP_DIR/opencode.db"
+# After stopping the dashboard, remove this private backup:
+rm -r -- "$BACKUP_DIR"
+```
+
+Backups contain private transcripts and credentials even though the dashboard does
+not display them. Never put one in this repository or an issue report. A backup
+reflects only its own contents; Refresh cannot fetch newer live data into it.
 
 ## Read-only guarantee
 
@@ -178,6 +240,63 @@ Usage describes assistant-message steps only, excludes copied pre-fork history,
 and does not add separate compaction events or session rollups. It is not full
 service spending or a claim of billing/CLI parity.
 
+## Ranges and metrics
+
+`7d`, `30d`, and `90d` include today and the preceding N−1 local calendar dates,
+from local midnight through the request's captured current instant. `all` has no
+lower bound. Bounds are `[from, to)`; daily charts and activity use the **server's
+timezone**, returned with the resolved range in each response, not the browser's.
+Missing dates have zero activity. Project filters use the owning session.
+
+| Metric | Definition |
+| --- | --- |
+| Sessions / subagents | Distinct root / child sessions with user or assistant activity in range, including old sessions with new activity |
+| Prompts | User messages in root sessions only |
+| Steps | Assistant-message rows, including subagents |
+| Tokens | Non-overlapping uncached input + visible output + reasoning + cache read + cache write |
+| Recorded cost | Recorded assistant costs only; session rollups are never added |
+| Cache rate | Summed cache read / (input + cache read + cache write) |
+| Assistant errors | Steps with a non-null error, separate from tool failures |
+| Tool outcomes | Completed = succeeded; error = failed; other/missing = unfinished |
+| Tool failure rate | Failed / (succeeded + failed) |
+| Tool duration | Terminal calls with finite nonnegative `completed − (ran ?? created)` from the tool's top-level time |
+| p50 / p95 | Arithmetic median / nearest-rank 95th percentile of valid tool durations |
+| Active days / longest streak | Dates with steps / longest consecutive run of active dates in range |
+
+Copied messages before a fork's creation are excluded. Model identity comes from
+each message's provider/model pair; variants are combined and missing identities
+stay in an unknown group. Session detail uses the selected range unless “All
+session activity” is chosen; children are not recursively added to parents.
+Missing measurements are not zeros: complete combined totals/rates require the
+needed coverage; measured subtotals are labeled, and unavailable values show `—`.
+TTFT and generation speed are not inferred from completion timestamps.
+
+Refresh re-reads health and every active-page breakdown/detail, without polling.
+Inactive pages fetch again on the next visit. API reads bypass HTTP caches; older
+in-flight responses cannot overwrite newer results. Inserts, updates, deletions,
+catalog changes, recovered missing files and replaced database files are visible
+without restarting. Read failures display an error instead of stale fresh values.
+
+### Differences from `opencode stats`
+
+The accounting reference is pinned to OpenCode v2.0.28. This dashboard excludes
+separate compaction usage, combines model variants, retains unknown identities,
+and leaves zero-denominator rates unavailable rather than zero. Estimates use
+current offline rates with stricter missing-rate coverage, not billing invoices.
+Compare only identical snapshots, ranges, server timezone and filters; a live CLI
+and a frozen backup do not describe the same selection. The CLI is a development
+cross-check, never a runtime data source.
+
+## Privacy
+
+The browser receives aggregate usage and statistical session metadata, including
+session titles/IDs, project names/worktree paths and model/agent names. These may
+still be sensitive. Prompts, reasoning, tool arguments/output, raw errors, provider
+state and credentials are not returned. Values are rendered as text, not HTML.
+Only theme/range preferences are persisted in browser storage; returned session
+data is not. All assets and data requests are same-origin; there are no CDNs,
+analytics, update checks or automatic catalog downloads.
+
 ## Development notes
 
 - The server runs `.ts` directly, so server code must stay erasable-syntax-only
@@ -198,4 +317,16 @@ credentials, or network access.
 
 ```sh
 npm test
+```
+
+For the built-client stale-response regression, start the dashboard against a
+synthetic fixture and use an installed `playwright-cli` in a fresh named browser
+session. The script holds the first Overview response (even ignoring its abort),
+refreshes successfully, then releases the older response and asserts unchanged
+visible values. It does not write the database.
+
+```sh
+playwright-cli -s=refresh open http://127.0.0.1:3848/
+playwright-cli -s=refresh run-code --filename=tests/browser/stale-refresh.js
+playwright-cli -s=refresh close
 ```
