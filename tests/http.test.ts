@@ -187,7 +187,7 @@ describe('/api/* routing', () => {
   it('returns JSON, never the SPA document, for unknown API paths', async () => {
     const harness = await harnessFor({});
     try {
-      for (const path of ['/api', '/api/stats/overview', '/api/health/extra']) {
+      for (const path of ['/api', '/api/stats/unknown', '/api/health/extra']) {
         const response = await fetchText(`${harness.server.url}${path}`);
         assert.equal(response.status, 404, `expected 404 for ${path}`);
         assert.match(response.headers.get('content-type') ?? '', /^application\/json/);

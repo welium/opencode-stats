@@ -79,51 +79,83 @@ export function applySchema(db: DatabaseSync): void {
   for (const statement of SCHEMA_SQL) db.exec(statement);
 }
 
+/**
+ * Indexes the live OpenCode v2.0.32 database provides over the tables the
+ * dashboard reads (verified read-only on 2026-10-17). Correctness fixtures stay
+ * index-free on purpose; performance fixtures add these so `EXPLAIN QUERY PLAN`
+ * output matches production instead of an unrealistically bare schema.
+ */
+export const OPENCODE_READ_INDEXES: readonly string[] = [
+  'CREATE INDEX session_message_time_created_idx ON session_message (time_created)',
+  'CREATE INDEX session_message_session_time_created_id_idx ON session_message (session_id, time_created, id)',
+  'CREATE INDEX session_v2_project_idx ON session_v2 (project_id)',
+  'CREATE INDEX session_v2_parent_idx ON session_v2 (parent_id)',
+];
+
+export function applyReadIndexes(db: DatabaseSync): void {
+  for (const statement of OPENCODE_READ_INDEXES) db.exec(statement);
+}
+
 export interface FixtureSession {
   id: string;
   projectId?: string | null;
   parentId?: string | null;
-  title?: string;
+  /** Non-null marks the session as a fork of another session. */
+  forkSessionId?: string | null;
+  title?: string | null;
   model?: string | null;
+  directory?: string;
   timeCreated?: number;
   timeUpdated?: number;
+  cost?: number | null;
+  tokens?: { input: number; output: number; reasoning: number; cacheRead: number; cacheWrite: number };
 }
 
 export interface FixtureMessage {
   id: string;
   sessionId: string;
-  type: 'user' | 'assistant';
+  /** Any message type the dashboard must classify; defaults are not injected. */
+  type: 'user' | 'assistant' | 'compaction' | 'synthetic' | 'system' | 'idle' | 'model-switched' | string;
   seq: number;
   timeCreated?: number;
   timeUpdated?: number;
-  data?: string;
+  /** Object payloads are serialized; a raw string or null is stored verbatim. */
+  data?: string | null | Record<string, unknown>;
 }
 
 export function insertSession(db: DatabaseSync, session: FixtureSession): void {
+  const tokens = session.tokens ?? { input: 100, output: 20, reasoning: 0, cacheRead: 0, cacheWrite: 0 };
   db.prepare(
     `INSERT INTO session_v2 (id, project_id, parent_id, fork_session_id, directory, title, model, cost,
        tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
        time_created, time_updated)
-     VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     session.id,
     session.projectId ?? null,
     session.parentId ?? null,
-    '/tmp/project',
-    session.title ?? `Session ${session.id}`,
+    session.forkSessionId ?? null,
+    session.directory ?? '/tmp/project',
+    session.title === undefined ? `Session ${session.id}` : session.title,
     session.model ?? null,
-    0.5,
-    100,
-    20,
-    0,
-    0,
-    0,
+    session.cost === undefined ? 0.5 : session.cost,
+    tokens.input,
+    tokens.output,
+    tokens.reasoning,
+    tokens.cacheRead,
+    tokens.cacheWrite,
     session.timeCreated ?? 1_700_000_000_000,
     session.timeUpdated ?? 1_700_000_100_000,
   );
 }
 
 export function insertMessage(db: DatabaseSync, message: FixtureMessage): void {
+  const data =
+    message.data === undefined
+      ? JSON.stringify({ role: message.type })
+      : typeof message.data === 'string' || message.data === null
+        ? message.data
+        : JSON.stringify(message.data);
   db.prepare(
     `INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -133,18 +165,112 @@ export function insertMessage(db: DatabaseSync, message: FixtureMessage): void {
     message.type,
     message.seq,
     message.timeCreated ?? 1_700_000_000_000,
-    message.timeUpdated ?? 1_700_000_100_000,
-    message.data ?? JSON.stringify({ role: message.type }),
+    message.timeUpdated ?? message.timeCreated ?? 1_700_000_100_000,
+    data,
   );
 }
 
-export function insertProject(db: DatabaseSync, id: string, name: string | null = `Project ${id}`): void {
-  db.prepare('INSERT INTO project (id, worktree, name) VALUES (?, ?, ?)').run(id, `/tmp/${id}`, name);
+export function insertProject(db: DatabaseSync, id: string, name: string | null = `Project ${id}`, worktree?: string): void {
+  db.prepare('INSERT INTO project (id, worktree, name) VALUES (?, ?, ?)').run(id, worktree ?? `/tmp/${id}`, name);
+}
+
+// ---------------------------------------------------------------------------
+// Assistant message payloads
+// ---------------------------------------------------------------------------
+
+export interface FixtureToolItem {
+  name?: string | null;
+  /** `state.status`; absent means finished-but-unreported. */
+  status?: string | null;
+  /** Top-level tool time — the authoritative timestamps the dashboard reads. */
+  time?: { created?: number | null; ran?: number | null; completed?: number | null };
+  /** Deliberately divergent `state.time`, used to prove it is ignored. */
+  stateTime?: { created?: number; ran?: number; completed?: number };
+  type?: string;
+  input?: Record<string, unknown>;
+}
+
+/** A `content[]` tool item shaped like the verified payload (§4). */
+export function toolItem(options: FixtureToolItem = {}): Record<string, unknown> {
+  const state: Record<string, unknown> = { status: options.status ?? 'completed', input: options.input ?? {} };
+  if (options.stateTime !== undefined) state.time = options.stateTime;
+  return {
+    type: options.type ?? 'tool',
+    name: options.name ?? 'tool',
+    state,
+    time: {
+      created: options.time?.created ?? null,
+      ran: options.time?.ran ?? null,
+      completed: options.time?.completed ?? null,
+    },
+  };
+}
+
+export interface FixtureAssistantPayload {
+  time?: { created: number; streamed?: number; completed?: number };
+  agent?: string | null;
+  model?: { id?: string | null; providerID?: string | null; variant?: string | null } | null;
+  content?: unknown[];
+  cost?: number | null;
+  tokens?: { input: number; output: number; reasoning: number; cache?: { read: number; write: number } } | null;
+  error?: { type: string; message?: string } | null;
+}
+
+/**
+ * Build an assistant payload. `cost` and `tokens` are omitted when set to
+ * `null`, which is how an unfinished or errored step looks on disk; explicit
+ * zeros stay present so tests can tell a measured zero from missing data.
+ */
+export function assistantPayload(options: FixtureAssistantPayload = {}): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    time: options.time ?? { created: 1_700_000_000_000, streamed: 1_700_000_000_100, completed: 1_700_000_000_200 },
+    agent: options.agent === undefined ? 'build' : options.agent,
+    model: options.model === undefined ? { id: 'model-a', providerID: 'provider-a', variant: 'high' } : options.model,
+    content: options.content ?? [],
+  };
+  if (options.cost !== null && options.cost !== undefined) payload.cost = options.cost;
+  if (options.tokens !== null && options.tokens !== undefined) {
+    payload.tokens = {
+      input: options.tokens.input,
+      output: options.tokens.output,
+      reasoning: options.tokens.reasoning,
+      cache: { read: options.tokens.cache?.read ?? 0, write: options.tokens.cache?.write ?? 0 },
+    };
+  }
+  if (options.error !== null && options.error !== undefined) payload.error = options.error;
+  return payload;
+}
+
+/** A user payload; only `time.created` matters to the metrics. */
+export function userPayload(timeCreated: number): Record<string, unknown> {
+  return { time: { created: timeCreated }, text: 'ignored by metrics' };
+}
+
+/** A compaction payload, which assistant-only totals must not include (§4). */
+export function compactionPayload(options: {
+  time: number;
+  cost?: number;
+  tokens?: { input: number; output: number; reasoning: number; cacheRead: number; cacheWrite: number };
+}): Record<string, unknown> {
+  return {
+    time: { created: options.time },
+    status: 'completed',
+    reason: 'auto',
+    cost: options.cost ?? 99,
+    tokens: options.tokens ?? { input: 9999, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  };
 }
 
 function openWritable(path: string, journalMode: 'wal' | 'delete'): DatabaseSync {
   const db = new DatabaseSync(path);
   db.exec(`PRAGMA journal_mode = ${journalMode}`);
+  return db;
+}
+
+/** Open a schema-initialized writable fixture database (tests only). */
+export function openFixtureDatabase(path: string, journalMode: 'wal' | 'delete' = 'delete'): DatabaseSync {
+  const db = openWritable(path, journalMode);
+  applySchema(db);
   return db;
 }
 

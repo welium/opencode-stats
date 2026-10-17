@@ -5,6 +5,11 @@
  * allowlists, no IP restrictions, no CORS headers, no CSP subsystem, no
  * trust in forwarded headers. API responses are always `Cache-Control: no-store`
  * and unknown `/api/*` paths always return JSON, never the SPA document.
+ *
+ * Statistics requests follow §3's refresh contract: one fresh, short read
+ * transaction per response with a single captured clock value, finished before
+ * the JSON payload is written. A database that cannot be read is `503` with the
+ * typed envelope, never a stale or all-zero success.
  */
 
 import { createReadStream } from 'node:fs';
@@ -12,10 +17,15 @@ import { createServer } from 'node:http';
 
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 
-import type { ApiErrorCode, ErrorEnvelope, HealthResponse } from '../shared/api.ts';
+import type { HealthResponse } from '../shared/api.ts';
 import type { DatabaseAdapter } from './database.ts';
 import type { StaticResolution } from './static.ts';
+import type { StatsRoute } from './stats.ts';
 
+import { DatabaseUnavailableError } from './database.ts';
+import { errorEnvelope, errorStatus } from './errors.ts';
+import { createQueryRunner } from './metrics.ts';
+import { prepareStatsRequest } from './stats.ts';
 import {
   MISSING_BUILD_INSTRUCTION,
   acceptsHtmlNavigation,
@@ -35,21 +45,7 @@ export interface DashboardServerOptions {
   logger?: Logger;
 }
 
-const ERROR_STATUS: Record<ApiErrorCode, number> = {
-  bad_request: 400,
-  not_found: 404,
-  method_not_allowed: 405,
-  database_unavailable: 503,
-  internal_error: 500,
-};
-
-export function errorEnvelope(code: ApiErrorCode, message: string): ErrorEnvelope {
-  return { generatedAt: new Date().toISOString(), error: { code, message } };
-}
-
-export function errorStatus(code: ApiErrorCode): number {
-  return ERROR_STATUS[code];
-}
+export { errorEnvelope, errorStatus };
 
 /**
  * True when the request target addresses the JSON API.
@@ -92,18 +88,19 @@ function sendJson(res: ServerResponse, status: number, payload: unknown, method:
 /**
  * Build the dashboard HTTP server.
  *
- * `/api/health` reports database state and supported-schema status. Every
- * statistics request in later phases reads through `database.withRead`, which
- * starts and finishes one short read transaction per request.
+ * `/api/health` reports database state and supported-schema status; the
+ * `/api/stats/*` and `/api/sessions*` endpoints return statistics. Every
+ * statistics request reads through `database.withRead`, which starts and
+ * finishes one short read transaction per response.
  */
 export function createDashboardServer(options: DashboardServerOptions): Server {
   const logger: Logger = options.logger ?? console;
 
   const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const requestTarget = req.url ?? '/';
-    let pathname: string;
+    let url: URL;
     try {
-      pathname = new URL(requestTarget, 'http://dashboard.invalid').pathname;
+      url = new URL(requestTarget, 'http://dashboard.invalid');
     } catch {
       sendJson(res, 400, errorEnvelope('bad_request', 'Request target is not a valid URL path'), req.method);
       return;
@@ -112,11 +109,11 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
     // API-ness is decided from the raw request target, so a request that merely
     // starts as `/api/...` can never fall through to the SPA document.
     if (isApiTarget(requestTarget)) {
-      handleApiRequest(req, res, pathname, options);
+      handleApiRequest(req, res, url, options, logger);
       return;
     }
 
-    await handleStaticRequest(req, res, pathname, options);
+    await handleStaticRequest(req, res, url.pathname, options);
   };
 
   return createServer((req, res) => {
@@ -132,25 +129,122 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
   });
 }
 
-function handleApiRequest(req: IncomingMessage, res: ServerResponse, pathname: string, options: DashboardServerOptions): void {
+interface ApiRouteMatch {
+  route: StatsRoute;
+  sessionId?: string;
+}
+
+/**
+ * Route an API pathname. Returns null for anything the API does not serve, which
+ * the caller answers as a JSON 404 (never the SPA document).
+ */
+function matchApiRoute(pathname: string): ApiRouteMatch | null {
+  switch (pathname) {
+    case '/api/stats/overview':
+      return { route: 'stats/overview' };
+    case '/api/stats/models':
+      return { route: 'stats/models' };
+    case '/api/stats/projects':
+      return { route: 'stats/projects' };
+    case '/api/stats/tools':
+      return { route: 'stats/tools' };
+    case '/api/sessions':
+      return { route: 'sessions' };
+    default:
+      break;
+  }
+
+  const prefix = '/api/sessions/';
+  if (!pathname.startsWith(prefix)) return null;
+  const encodedId = pathname.slice(prefix.length);
+  if (encodedId === '' || encodedId.includes('/')) return null;
+  try {
+    const sessionId = decodeURIComponent(encodedId);
+    if (sessionId === '') return null;
+    return { route: 'session', sessionId };
+  } catch {
+    return null;
+  }
+}
+
+function handleApiRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  options: DashboardServerOptions,
+  logger: Logger,
+): void {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.setHeader('Allow', 'GET, HEAD');
     sendJson(
       res,
       errorStatus('method_not_allowed'),
-      errorEnvelope('method_not_allowed', `${req.method} is not supported for ${pathname}`),
+      errorEnvelope('method_not_allowed', `${req.method} is not supported for ${url.pathname}`),
       req.method,
     );
     return;
   }
 
-  if (pathname === '/api/health') {
+  if (url.pathname === '/api/health') {
     sendHealth(res, options.database, req.method);
     return;
   }
 
-  // Unknown API paths always return JSON, never the SPA document.
-  sendJson(res, errorStatus('not_found'), errorEnvelope('not_found', `Unknown API path: ${pathname}`), req.method);
+  const match = matchApiRoute(url.pathname);
+  if (match === null) {
+    // Unknown API paths always return JSON, never the SPA document.
+    sendJson(res, errorStatus('not_found'), errorEnvelope('not_found', `Unknown API path: ${url.pathname}`), req.method);
+    return;
+  }
+
+  sendStatistics(req, res, match, url.searchParams, options, logger);
+}
+
+/** Validate, read inside one transaction, and write the response. */
+function sendStatistics(
+  req: IncomingMessage,
+  res: ServerResponse,
+  match: ApiRouteMatch,
+  params: URLSearchParams,
+  options: DashboardServerOptions,
+  logger: Logger,
+): void {
+  // One clock value per response: it resolves the range, stamps `generatedAt`,
+  // and appears in any error envelope produced from this request.
+  const now = Date.now();
+  const generatedAt = new Date(now).toISOString();
+
+  const prepared = prepareStatsRequest(
+    match.route,
+    params,
+    now,
+    match.sessionId === undefined ? {} : { sessionId: match.sessionId },
+  );
+  if (!prepared.ok) {
+    sendJson(res, errorStatus('bad_request'), errorEnvelope('bad_request', prepared.message, generatedAt), req.method);
+    return;
+  }
+
+  let build: { status: number; payload: unknown };
+  try {
+    build = options.database.withRead((db) => prepared.build({ runner: createQueryRunner(db), now }));
+  } catch (error) {
+    if (error instanceof DatabaseUnavailableError) {
+      sendJson(
+        res,
+        errorStatus('database_unavailable'),
+        errorEnvelope('database_unavailable', error.status.message, generatedAt),
+        req.method,
+      );
+      return;
+    }
+    const detail = error instanceof Error ? error.message : 'unknown error';
+    logger.error(`Statistics request failed for ${match.route}: ${detail}`);
+    sendJson(res, errorStatus('internal_error'), errorEnvelope('internal_error', 'Unexpected server error', generatedAt), req.method);
+    return;
+  }
+
+  sendJson(res, build.status, build.payload, req.method);
 }
 
 function sendHealth(res: ServerResponse, database: DatabaseAdapter, method: string | undefined): void {
