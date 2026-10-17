@@ -50,6 +50,8 @@ describe('parseHash', () => {
     });
     assert.deepEqual(parseHash('#/projects'), { name: 'projects', sessionId: null, query: {} });
     assert.deepEqual(parseHash('#/tools?range=all'), { name: 'tools', sessionId: null, query: { range: 'all' } });
+    assert.deepEqual(parseHash('#/errors?range=all&offset=50'), { name: 'errors', sessionId: null, query: { range: 'all', offset: '50' } });
+    assert.equal(pageHash(parseHash('#/models?range=7d&projectId=p&offset=50'), 'errors'), '#/errors?range=7d&projectId=p');
     assert.deepEqual(parseHash('#/sessions'), { name: 'sessions', sessionId: null, query: {} });
   });
 

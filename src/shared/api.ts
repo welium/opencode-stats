@@ -155,6 +155,62 @@ export interface UsageCoverage {
   tokensComplete: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Offline API-equivalent estimates (§2 verified accounting, §7 Phase 4)
+// ---------------------------------------------------------------------------
+
+/** State of the optional local pricing catalog used for estimates. */
+export interface PricingCatalogMeta {
+  /** True only when the envelope and its string body parsed into a usable catalog. */
+  available: boolean;
+  /** The catalog's own `updatedAt` as an ISO instant; null when absent or unusable. */
+  updatedAt: string | null;
+  /** Reserved; always null. Arbitrary local digest strings are not exposed. */
+  digest: string | null;
+}
+
+/**
+ * `complete` = every counted step was priced; `partial` = a priced subtotal of a
+ * larger counted set; `unavailable` = nothing could be priced.
+ */
+export type EstimateStatus = 'complete' | 'partial' | 'unavailable';
+
+/**
+ * Why one counted step could not be priced. Every unpriced step gets exactly one
+ * reason: `no-model-price` (unknown provider/model or a rejected price entry),
+ * `missing-tokens` (a token category is missing, negative, or not finite),
+ * `missing-rate` (a required rate for a positive category is missing or invalid),
+ * `ambiguous-tier` (invalid tier descriptors or duplicate applicable thresholds).
+ */
+export type EstimateUnpricedReason = 'no-model-price' | 'missing-tokens' | 'missing-rate' | 'ambiguous-tier';
+
+/** A provider/model identity with at least one unpriced step. */
+export interface UnpricedModelRow {
+  provider: string | null;
+  model: string | null;
+  steps: number;
+}
+
+/**
+ * An offline API-equivalent estimate for one usage group. This is a separate
+ * value that is never added to, or mixed with, recorded cost (§7 Phase 4).
+ */
+export interface CostEstimate {
+  status: EstimateStatus;
+  /** Priced subtotal in USD; null when `status` is `unavailable`. */
+  cost: number | null;
+  /** Assistant steps considered; the same scope as the sibling usage totals. */
+  steps: number;
+  pricedSteps: number;
+  unpricedSteps: number;
+  unpricedByReason: Record<EstimateUnpricedReason, number>;
+  /** Unpriced identities ranked by step count, bounded to the top rows. */
+  unpricedModels: UnpricedModelRow[];
+  /** True when more unpriced identities exist than `unpricedModels` lists. */
+  unpricedModelsTruncated: boolean;
+  catalog: PricingCatalogMeta;
+}
+
 /** One zero-filled local calendar date of the daily series. */
 export interface DailyActivityPoint {
   /** Local calendar date, `YYYY-MM-DD`. */
@@ -165,6 +221,11 @@ export interface DailyActivityPoint {
   tokens: number | null;
   /** Measured recorded cost for the date; null when steps exist but none recorded cost. */
   cost: number | null;
+}
+
+export interface DailyEstimatePoint {
+  date: string;
+  estimate: CostEstimate;
 }
 
 /** Distinct owning sessions active in range, split by `parent_id` (§4). */
@@ -179,8 +240,10 @@ export interface AgentUsageRow {
   agent: string | null;
   steps: number;
   usage: UsageTotals;
+  estimate: CostEstimate;
 }
 
+/** Assistant activity and streaks (local calendar dates). */
 export interface ActivitySummary {
   /** Local dates with at least one assistant step. */
   activeDays: number;
@@ -200,8 +263,11 @@ export interface OverviewResponse {
   /** Assistant errors: steps with a non-null `error`. */
   assistantErrors: number;
   usage: UsageTotals;
+  /** Offline API-equivalent estimate for the same steps as `usage`. */
+  estimate: CostEstimate;
   activity: ActivitySummary;
   daily: DailyActivityPoint[];
+  dailyEstimates: DailyEstimatePoint[];
   agents: AgentUsageRow[];
 }
 
@@ -214,6 +280,11 @@ export interface ModelUsageRow {
   /** Distinct owning sessions with an eligible step for this model. */
   sessions: number;
   usage: UsageTotals;
+  /**
+   * API-equivalent estimate for this model's steps. Kept separate from `usage`
+   * so an estimate can never be read as, or added to, recorded cost.
+   */
+  estimate: CostEstimate;
 }
 
 /** `GET /api/stats/models`. */
@@ -223,6 +294,7 @@ export interface ModelsResponse {
   coverage: UsageCoverage;
   models: ModelUsageRow[];
   daily: DailyActivityPoint[];
+  dailyEstimates: DailyEstimatePoint[];
 }
 
 export interface ProjectUsageRow {
@@ -234,6 +306,8 @@ export interface ProjectUsageRow {
   sessions: number;
   steps: number;
   usage: UsageTotals;
+  /** API-equivalent estimate for this project's steps; never added to `usage`. */
+  estimate: CostEstimate;
 }
 
 /** `GET /api/stats/projects`. */
@@ -243,6 +317,7 @@ export interface ProjectsResponse {
   coverage: UsageCoverage;
   projects: ProjectUsageRow[];
   daily: DailyActivityPoint[];
+  dailyEstimates: DailyEstimatePoint[];
 }
 
 export type ToolOutcome = 'succeeded' | 'failed' | 'unfinished';
@@ -295,6 +370,8 @@ export interface SessionListRow {
   prompts: number;
   steps: number;
   usage: UsageTotals;
+  /** API-equivalent estimate for this session's in-range steps. */
+  estimate: CostEstimate;
 }
 
 /** `GET /api/sessions`. */
@@ -327,6 +404,7 @@ export interface SessionStepRow {
   model: string | null;
   hasError: boolean;
   usage: UsageTotals;
+  estimate: CostEstimate;
   tools: SessionStepTool[];
 }
 
@@ -357,10 +435,36 @@ export interface SessionDetailResponse {
   };
   coverage: UsageCoverage;
   usage: UsageTotals;
+  estimate: CostEstimate;
   prompts: number;
   activity: ActivitySummary;
   daily: DailyActivityPoint[];
+  dailyEstimates: DailyEstimatePoint[];
   parent: { id: string; title: string } | null;
   children: Array<{ id: string; title: string; timeCreated: number; steps: number }>;
   steps: SessionStepPage;
+}
+
+/** Safe metadata only: error messages, data, and tool state are never returned. */
+export interface ErrorEventRow {
+  messageId: string;
+  sessionId: string | null;
+  timeCreated: number;
+  kind: 'assistant' | 'tool';
+  type: string;
+  provider: string | null;
+  model: string | null;
+}
+
+export interface ErrorsResponse {
+  generatedAt: string;
+  range: RangeMeta;
+  assistantErrors: number;
+  toolFailures: number;
+  groups: Array<{ kind: 'assistant' | 'tool'; type: string; provider: string | null; model: string | null; count: number }>;
+  groupsTruncated: boolean;
+  total: number;
+  limit: number;
+  offset: number;
+  entries: ErrorEventRow[];
 }

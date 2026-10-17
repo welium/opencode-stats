@@ -18,6 +18,7 @@ import type { PageProps } from './types.ts';
 import { fetchModels, fetchOverview, fetchProjects } from '../api.ts';
 import { DailyActivityChart, DAILY_METRIC_OPTIONS, METRIC_LABELS, ShareBar } from '../components/charts.tsx';
 import { PageHeader } from '../components/PageHeader.tsx';
+import { EstimateStat, EstimateValue } from '../components/Estimate.tsx';
 import { sortRows, useSort } from '../components/sorting.ts';
 import { QueryPanel } from '../components/states.tsx';
 import { Card, Segmented, SortRow, Stat, ValueCell } from '../components/ui.tsx';
@@ -46,6 +47,7 @@ const AGENT_COLUMNS: readonly ColumnSpec[] = [
   { key: 'steps', label: 'Steps', align: 'right' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
+  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
 ];
 
 const MODEL_COLUMNS: readonly ColumnSpec[] = [
@@ -54,6 +56,7 @@ const MODEL_COLUMNS: readonly ColumnSpec[] = [
   { key: 'sessions', label: 'Sessions', align: 'right' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
+  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
 ];
 
 const PROJECT_COLUMNS: readonly ColumnSpec[] = [
@@ -62,12 +65,14 @@ const PROJECT_COLUMNS: readonly ColumnSpec[] = [
   { key: 'steps', label: 'Steps', align: 'right' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
+  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
 ];
 
 /** Top-of-page breakdowns, capped so Overview stays a summary. */
 const TOP_ROWS = 6;
 
 function agentSortValue(row: AgentUsageRow, key: string): SortValue {
+  if (key === 'estimate') return row.estimate?.cost ?? null;
   switch (key) {
     case 'agent':
       return row.agent;
@@ -87,6 +92,7 @@ function modelLabel(row: ModelUsageRow): string {
 }
 
 function modelSortValue(row: ModelUsageRow, key: string): SortValue {
+  if (key === 'estimate') return row.estimate.cost;
   switch (key) {
     case 'model':
       return modelLabel(row);
@@ -104,6 +110,7 @@ function modelSortValue(row: ModelUsageRow, key: string): SortValue {
 }
 
 function projectSortValue(row: ProjectUsageRow, key: string): SortValue {
+  if (key === 'estimate') return row.estimate.cost;
   switch (key) {
     case 'project':
       return row.label;
@@ -179,6 +186,7 @@ export function OverviewPage(props: PageProps): React.ReactElement {
             <>
               <div className="stat-grid">
                 <Stat label="Recorded cost" value={usage.cost.text} partial={usage.cost.partial} />
+                <EstimateStat estimate={overview.estimate} />
                 <Stat
                   label="Sessions"
                   value={formatInteger(overview.sessions.total)}
@@ -223,7 +231,7 @@ export function OverviewPage(props: PageProps): React.ReactElement {
                   />
                 }
               >
-                <DailyActivityChart points={overview.daily} metric={metric} label={`Daily ${METRIC_LABELS[metric].toLowerCase()}`} />
+                <DailyActivityChart points={overview.daily} estimates={overview.dailyEstimates} metric={metric} label={`Daily ${METRIC_LABELS[metric].toLowerCase()}`} />
               </Card>
 
               <div className={mix.length === 0 ? '' : 'grid-two'}>
@@ -254,6 +262,7 @@ export function OverviewPage(props: PageProps): React.ReactElement {
                                 <td data-align="right" className="num">{formatInteger(row.steps)}</td>
                                 <td data-align="right"><ValueCell value={values.tokens} /></td>
                                 <td data-align="right"><ValueCell value={values.cost} /></td>
+                                <td data-align="right"><EstimateValue estimate={row.estimate} /></td>
                               </tr>
                             );
                           })}
@@ -298,6 +307,7 @@ export function OverviewPage(props: PageProps): React.ReactElement {
                               <td data-align="right" className="num">{formatInteger(row.sessions)}</td>
                               <td data-align="right"><ValueCell value={values.tokens} /></td>
                               <td data-align="right"><ValueCell value={values.cost} /></td>
+                              <td data-align="right"><EstimateValue estimate={row.estimate} /></td>
                             </tr>
                           );
                         })}
@@ -337,6 +347,7 @@ export function OverviewPage(props: PageProps): React.ReactElement {
                             <td data-align="right" className="num">{formatInteger(row.steps)}</td>
                             <td data-align="right"><ValueCell value={usageValues(row.usage).tokens} /></td>
                             <td data-align="right"><ValueCell value={usageValues(row.usage).cost} /></td>
+                            <td data-align="right"><EstimateValue estimate={row.estimate} /></td>
                           </tr>
                         ))}
                       </tbody>

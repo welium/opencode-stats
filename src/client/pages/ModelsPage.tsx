@@ -18,6 +18,7 @@ import type { PageProps } from './types.ts';
 import { fetchModels } from '../api.ts';
 import { DailyActivityChart } from '../components/charts.tsx';
 import { FilterChip, PageHeader } from '../components/PageHeader.tsx';
+import { EstimateValue } from '../components/Estimate.tsx';
 import { sortRows, useSort } from '../components/sorting.ts';
 import { QueryPanel } from '../components/states.tsx';
 import { Card, SortRow, Stat, ValueCell } from '../components/ui.tsx';
@@ -32,6 +33,7 @@ const COLUMNS: readonly ColumnSpec[] = [
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cacheRate', label: 'Cache rate', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
+  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
 ];
 
 function modelLabel(row: ModelUsageRow): string {
@@ -40,6 +42,7 @@ function modelLabel(row: ModelUsageRow): string {
 }
 
 function sortValue(row: ModelUsageRow, key: string): SortValue {
+  if (key === 'estimate') return row.estimate.cost;
   switch (key) {
     case 'model':
       return modelLabel(row);
@@ -120,7 +123,7 @@ export function ModelsPage(props: PageProps): React.ReactElement {
               </div>
 
               <Card title="Daily activity" description="Tokens recorded per local date for the current selection.">
-                <DailyActivityChart points={data.daily} metric="tokens" label="Daily tokens" />
+                <DailyActivityChart points={data.daily} estimates={data.dailyEstimates} metric="tokens" label="Daily tokens" />
               </Card>
 
               <Card title="Model usage" description="Steps, sessions, and recorded cost per provider/model." flush>
@@ -154,6 +157,7 @@ export function ModelsPage(props: PageProps): React.ReactElement {
                               {values.cacheRate}
                             </td>
                             <td data-align="right"><ValueCell value={values.cost} /></td>
+                            <td data-align="right"><EstimateValue estimate={row.estimate} /></td>
                           </tr>
                         );
                       })}

@@ -20,6 +20,7 @@ import { FilterChip, PageHeader } from '../components/PageHeader.tsx';
 import { sortRows, useSort } from '../components/sorting.ts';
 import { QueryPanel } from '../components/states.tsx';
 import { Card, SortRow, Stat, ValueCell } from '../components/ui.tsx';
+import { EstimateValue } from '../components/Estimate.tsx';
 import { formatInteger, usageValues } from '../format.ts';
 import { pageHash, rangeLabel } from '../route.ts';
 import { useQuery } from '../useQuery.ts';
@@ -30,9 +31,11 @@ const COLUMNS: readonly ColumnSpec[] = [
   { key: 'steps', label: 'Steps', align: 'right' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
+  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
 ];
 
 function sortValue(row: ProjectUsageRow, key: string): SortValue {
+  if (key === 'estimate') return row.estimate.cost;
   switch (key) {
     case 'project':
       return row.label;
@@ -102,7 +105,7 @@ export function ProjectsPage(props: PageProps): React.ReactElement {
             </div>
 
             <Card title="Daily activity" description="Tokens recorded per local date for the current selection.">
-              <DailyActivityChart points={data.daily} metric="tokens" label="Daily tokens" />
+              <DailyActivityChart points={data.daily} estimates={data.dailyEstimates} metric="tokens" label="Daily tokens" />
             </Card>
 
             <Card
@@ -134,6 +137,7 @@ export function ProjectsPage(props: PageProps): React.ReactElement {
                           <td data-align="right" className="num">{formatInteger(row.steps)}</td>
                           <td data-align="right"><ValueCell value={values.tokens} /></td>
                           <td data-align="right"><ValueCell value={values.cost} /></td>
+                          <td data-align="right"><EstimateValue estimate={row.estimate} /></td>
                         </tr>
                       );
                     })}

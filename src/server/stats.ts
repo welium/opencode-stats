@@ -16,8 +16,11 @@
  */
 
 import type {
+  ErrorEventRow,
+  ErrorsResponse,
   ActivitySummary,
   DailyActivityPoint,
+  DailyEstimatePoint,
   ModelUsageRow,
   ModelsResponse,
   OverviewResponse,
@@ -36,6 +39,8 @@ import type {
 } from '../shared/api.ts';
 
 import { errorEnvelope } from './errors.ts';
+import { estimateCost, loadPricingCatalog } from './pricing.ts';
+import type { PricingCatalog } from './pricing.ts';
 import {
   addPromptToDaily,
   addStep,
@@ -77,7 +82,7 @@ import { localDateKey, parseStatsRange, rangeDateKeys, rangeMeta, resolveRange }
 // Request preparation
 // ---------------------------------------------------------------------------
 
-export type StatsRoute = 'stats/overview' | 'stats/models' | 'stats/projects' | 'stats/tools' | 'sessions' | 'session';
+export type StatsRoute = 'stats/overview' | 'stats/models' | 'stats/projects' | 'stats/tools' | 'stats/errors' | 'sessions' | 'session';
 
 /** Captured clock plus the request's read connection. */
 export interface StatsContext {
@@ -191,6 +196,7 @@ interface RangeAggregate {
   usage: UsageTotals;
   coverage: UsageCoverage;
   daily: DailyActivityPoint[];
+  dailyEstimates: DailyEstimatePoint[];
   activity: ActivitySummary;
   assistantErrors: number;
 }
@@ -204,6 +210,7 @@ function aggregateRange(
   range: ResolvedRange,
   steps: readonly StepRow[],
   promptDates: readonly string[],
+  pricing: PricingCatalog,
 ): RangeAggregate {
   const accumulator = createUsageAccumulator();
   const daily = createDailyMap();
@@ -219,11 +226,13 @@ function aggregateRange(
 
   const usage = finishUsage(accumulator);
   const dateKeys = rangeDateKeys(range, earliestDate([...activeDates, ...promptDates]));
+  const byDate = groupSteps(steps, (step) => localDateKey(step.timeCreated));
 
   return {
     usage,
     coverage: usageCoverage(accumulator, usage),
     daily: buildDaily(daily, dateKeys),
+    dailyEstimates: dateKeys.map((date) => ({ date, estimate: estimateCost(byDate.get(date) ?? [], pricing) })),
     activity: summarizeActivity(dateKeys, activeDates),
     assistantErrors: accumulator.hasError,
   };
@@ -256,7 +265,9 @@ function buildOverview(context: StatsContext, query: { range: ResolvedRange; pro
   const steps = loadStepRows(context.runner, scope);
   const prompts = rootPromptDates(loadPromptRows(context.runner, scope));
   const sessions = loadActiveSessions(context.runner, scope);
-  const aggregate = aggregateRange(query.range, steps, prompts.dates);
+  const pricing = loadPricingCatalog(context.runner);
+  const aggregate = aggregateRange(query.range, steps, prompts.dates, pricing);
+  const agentGroups = groupSteps(steps, (row) => row.agent);
 
   const payload: OverviewResponse = {
     generatedAt: nowIso(context),
@@ -267,9 +278,11 @@ function buildOverview(context: StatsContext, query: { range: ResolvedRange; pro
     steps: steps.length,
     assistantErrors: aggregate.assistantErrors,
     usage: aggregate.usage,
+    estimate: estimateCost(steps, pricing),
     activity: aggregate.activity,
     daily: aggregate.daily,
-    agents: buildAgentRows(groupSteps(steps, (row) => row.agent)),
+    dailyEstimates: aggregate.dailyEstimates,
+    agents: buildAgentRows(agentGroups).map((row) => ({ ...row, estimate: estimateCost(agentGroups.get(row.agent) ?? [], pricing) })),
   };
   return { status: 200, payload };
 }
@@ -313,11 +326,12 @@ function buildModels(
       : allSteps.filter((row) => row.model === filter.model && (filter.provider === null || row.provider === filter.provider));
 
   const models: ModelUsageRow[] = [];
+  const pricing = loadPricingCatalog(context.runner);
   for (const group of groupByModel(steps)) {
     const { usage } = usageOf(group.rows);
     const sessionIds = new Set<string>();
     for (const row of group.rows) if (row.sessionId !== null) sessionIds.add(row.sessionId);
-    models.push({ provider: group.provider, model: group.model, steps: group.rows.length, sessions: sessionIds.size, usage });
+    models.push({ provider: group.provider, model: group.model, steps: group.rows.length, sessions: sessionIds.size, usage, estimate: estimateCost(group.rows, pricing) });
   }
   models.sort((left, right) => {
     const ranked = compareUsage(left, right);
@@ -325,13 +339,14 @@ function buildModels(
     return `${left.provider ?? ''}/${left.model ?? ''}`.localeCompare(`${right.provider ?? ''}/${right.model ?? ''}`);
   });
 
-  const aggregate = aggregateRange(query.range, steps, []);
+  const aggregate = aggregateRange(query.range, steps, [], pricing);
   const payload: ModelsResponse = {
     generatedAt: nowIso(context),
     range: rangeMeta(query.range),
     coverage: aggregate.coverage,
     models,
     daily: aggregate.daily,
+    dailyEstimates: aggregate.dailyEstimates,
   };
   return { status: 200, payload };
 }
@@ -350,6 +365,7 @@ function buildProjects(
   const catalog = loadProjectCatalog(context.runner);
 
   const stepGroups = groupSteps(steps, (row) => row.projectId);
+  const pricing = loadPricingCatalog(context.runner);
   const sessionCounts = new Map<string | null, number>();
   for (const session of sessions) {
     sessionCounts.set(session.projectId, (sessionCounts.get(session.projectId) ?? 0) + 1);
@@ -369,6 +385,7 @@ function buildProjects(
       sessions: sessionCounts.get(projectId) ?? 0,
       steps: rows.length,
       usage,
+      estimate: estimateCost(rows, pricing),
     });
   }
   projects.sort((left, right) => {
@@ -377,13 +394,14 @@ function buildProjects(
     return left.label.localeCompare(right.label);
   });
 
-  const aggregate = aggregateRange(query.range, steps, []);
+  const aggregate = aggregateRange(query.range, steps, [], pricing);
   const payload: ProjectsResponse = {
     generatedAt: nowIso(context),
     range: rangeMeta(query.range),
     coverage: aggregate.coverage,
     projects,
     daily: aggregate.daily,
+    dailyEstimates: aggregate.dailyEstimates,
   };
   return { status: 200, payload };
 }
@@ -491,6 +509,7 @@ function buildSessionsList(
   }
 
   const stepGroups = groupSteps(steps, (row) => row.sessionId);
+  const pricing = loadPricingCatalog(context.runner);
   let rows: SessionListRow[] = sessions.map((session) => {
     const sessionSteps = stepGroups.get(session.id) ?? [];
     const { usage } = usageOf(sessionSteps);
@@ -507,6 +526,7 @@ function buildSessionsList(
       prompts: promptCounts.get(session.id) ?? 0,
       steps: sessionSteps.length,
       usage,
+      estimate: estimateCost(sessionSteps, pricing),
     };
   });
 
@@ -565,6 +585,7 @@ function buildSessionDetail(
     return left.id.localeCompare(right.id);
   });
   const page = ordered.slice(query.offset, query.offset + query.limit);
+  const pricing = loadPricingCatalog(context.runner);
 
   const toolsByMessage = new Map<string, ReturnType<typeof loadToolRows>>();
   for (const tool of loadToolRows(context.runner, scope)) {
@@ -582,6 +603,7 @@ function buildSessionDetail(
     model: step.model,
     hasError: step.hasError,
     usage: usageOf([step]).usage,
+    estimate: estimateCost([step], pricing),
     tools: (toolsByMessage.get(step.id) ?? []).map((tool) => ({
       name: tool.name,
       status: classifyToolStatus(tool.status),
@@ -592,7 +614,7 @@ function buildSessionDetail(
   const parent = session.parentId === null ? null : loadSessionMetadata(context.runner, session.parentId);
   const catalog = loadProjectCatalog(context.runner);
   const project = session.projectId === null ? undefined : catalog.get(session.projectId);
-  const aggregate = aggregateRange(query.range, steps, prompts.dates);
+  const aggregate = aggregateRange(query.range, steps, prompts.dates, pricing);
 
   const payload: SessionDetailResponse = {
     generatedAt: nowIso(context),
@@ -611,9 +633,11 @@ function buildSessionDetail(
     },
     coverage: aggregate.coverage,
     usage: aggregate.usage,
+    estimate: estimateCost(steps, pricing),
     prompts: prompts.count,
     activity: aggregate.activity,
     daily: aggregate.daily,
+    dailyEstimates: aggregate.dailyEstimates,
     parent: parent === null ? null : { id: parent.id, title: sessionLabel(parent.id, parent.title) },
     children: loadChildSessions(context.runner, sessionId),
     steps: { total: ordered.length, limit: query.limit, offset: query.offset, entries },
@@ -624,6 +648,39 @@ function buildSessionDetail(
 // ---------------------------------------------------------------------------
 // Routing entry point
 // ---------------------------------------------------------------------------
+
+function buildErrors(context: StatsContext, query: { range: ResolvedRange; projectId: string | null; limit: number; offset: number }): StatsBuild {
+  const scope = scopeFor(query.range, query.projectId);
+  const steps = loadStepRows(context.runner, scope);
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const entries: ErrorEventRow[] = steps.filter((step) => step.hasError).map((step) => ({
+    messageId: step.id, sessionId: step.sessionId, timeCreated: step.timeCreated,
+    kind: 'assistant', type: step.errorType ?? 'UnknownError', provider: step.provider, model: step.model,
+  }));
+  const assistantErrors = entries.length;
+  for (const tool of loadToolRows(context.runner, scope)) {
+    if (classifyToolStatus(tool.status) !== 'failed') continue;
+    const step = byId.get(tool.messageId);
+    if (step === undefined) continue;
+    entries.push({ messageId: step.id, sessionId: step.sessionId, timeCreated: step.timeCreated,
+      kind: 'tool', type: 'failed', provider: step.provider, model: step.model });
+  }
+  const grouped = new Map<string, ErrorsResponse['groups'][number]>();
+  for (const entry of entries) {
+    const key = JSON.stringify([entry.kind, entry.type, entry.provider, entry.model]);
+    const group = grouped.get(key) ?? { kind: entry.kind, type: entry.type, provider: entry.provider, model: entry.model, count: 0 };
+    group.count++;
+    grouped.set(key, group);
+  }
+  const groups = [...grouped.values()].sort((a, b) => b.count - a.count || JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  entries.sort((a, b) => b.timeCreated - a.timeCreated || a.messageId.localeCompare(b.messageId) || a.kind.localeCompare(b.kind));
+  const payload: ErrorsResponse = {
+    generatedAt: nowIso(context), range: rangeMeta(query.range), assistantErrors,
+    toolFailures: entries.length - assistantErrors, groups: groups.slice(0, 100), groupsTruncated: groups.length > 100,
+    total: entries.length, limit: query.limit, offset: query.offset, entries: entries.slice(query.offset, query.offset + query.limit),
+  };
+  return { status: 200, payload };
+}
 
 /**
  * Validate a statistics request and return a builder bound to it.
@@ -640,6 +697,15 @@ export function prepareStatsRequest(
 ): PreparedStatsRequest {
   const base = parseRangeAndProject(params);
   if (!base.ok) return base;
+
+  if (route === 'stats/errors') {
+    const limit = parseBoundedInteger(params.get('limit'), 'limit', 50, 200);
+    const offset = parseBoundedInteger(params.get('offset'), 'offset', 0, MAX_OFFSET);
+    if (!limit.ok) return limit;
+    if (!offset.ok) return offset;
+    const query = { range: resolveRange(base.value.rangeKey, now), projectId: base.value.projectId, limit: limit.value, offset: offset.value };
+    return { ok: true, build: (context) => buildErrors(context, query) };
+  }
 
   if (route !== 'sessions' && route !== 'session') {
     const range = resolveRange(base.value.rangeKey, now);

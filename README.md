@@ -5,11 +5,9 @@ OpenCode's local SQLite database only: no OpenCode HTTP API, no provider API, no
 hosted service, no telemetry, and no runtime dependency downloads. All browser
 assets are bundled locally.
 
-**Status: Phase 1.** This repository currently ships the package/toolchain
-scaffold, explicit server and client type checks, the CLI, the read-only database
-adapter with a schema probe, `/api/health`, static serving of the built client,
-and Node's test runner with synthetic SQLite fixtures. Metric aggregation and the
-dashboard pages arrive in later phases.
+The dashboard includes Overview, Models, Projects, Tools, Sessions with statistical
+detail, and Errors. Recorded assistant-step cost and offline API-equivalent
+estimates are separate values. Final operational verification is in progress.
 
 ## Requirements
 
@@ -123,6 +121,13 @@ OpenCode's records, schema, and configuration are never modified.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/health` | Database state and supported-schema status |
+| `GET /api/stats/overview` | Assistant usage, activity, agents and estimates |
+| `GET /api/stats/models` | Provider/model usage and estimates |
+| `GET /api/stats/projects` | Project usage and estimates |
+| `GET /api/stats/tools` | Tool outcomes and durations |
+| `GET /api/stats/errors` | Assistant error types/models, tool failures and session links |
+| `GET /api/sessions` | Searchable, paginated session usage and estimates |
+| `GET /api/sessions/:id` | Statistical detail and paginated step metadata |
 
 `/api/health` answers `200` with `status: "ok"` when the database is readable and
 schema-compatible, and `503` with `status: "unavailable"` plus a typed error
@@ -132,6 +137,46 @@ envelope otherwise. The database state is one of `ready`, `missing`,
 API responses are always `Cache-Control: no-store` with
 `X-Content-Type-Options: nosniff`. Unknown `/api/*` paths always return JSON, never
 the SPA document. Unsupported methods return `405` with an `Allow` header.
+
+### Errors and offline estimates
+
+Errors use the same eligible assistant-step, project and range rules as usage.
+Only recognized assistant error-name tags and normalized failed tool status are
+returned; unknown names become `UnknownError`. Error messages, error data, tool
+state and transcripts are not exposed. `/api/stats/errors` accepts `range`,
+`projectId`, `limit` (default 50, maximum 200), and `offset` (maximum 1,000,000).
+Counts describe the whole selection; entries are paginated newest-first with
+stable message/kind tie-breaks. Type/model groups are bounded to the top 100.
+
+Estimates read the optional `kv` entry `models-dev:catalog` on every usage request,
+inside the response's read transaction. Its JSON envelope must contain a numeric
+`updatedAt` and a JSON-string `body` holding the provider catalog. Missing tables,
+missing entries, or malformed catalogs leave recorded usage available. No catalog
+refresh, provider discovery, or external request is performed.
+
+Provider/model keys and explicit IDs must match exactly. Prices are finite,
+nonnegative USD per million tokens. Each step is priced as
+`(input*inputRate + (output+reasoning)*outputRate + cacheRead*cacheReadRate + cacheWrite*cacheWriteRate) / 1,000,000`.
+Context is `input + cacheRead + cacheWrite`. Base prices and `tiers` are supported;
+the largest context threshold **strictly less** than context applies. Equality
+retains the previous tier/base. Tier prices replace, not inherit from, base prices.
+The legacy `context_over_200k` field is ignored. Invalid tier descriptors and
+duplicate applicable thresholds are rejected rather than guessed.
+
+All five token categories must be measured. A positive category requires its
+rate; zero-token categories do not. Explicit zero prices are valid. Missing or
+invalid rates produce unpriced steps, not free usage. Responses distinguish
+`complete`, `partial` (priced subtotal), and `unavailable`, with unpriced step/model
+counts and catalog timestamp. Unpriced identity lists are bounded to 50 rows.
+Daily estimates are returned separately from the recorded daily series; the
+Overview chart offers an Estimate metric, and chart data tables keep both costs
+separate. Partial series are labeled as priced subtotals.
+Catalog bodies and arbitrary digest strings are never returned. Current cached
+prices are not historical invoices and are never added to recorded cost.
+
+Usage describes assistant-message steps only, excludes copied pre-fork history,
+and does not add separate compaction events or session rollups. It is not full
+service spending or a claim of billing/CLI parity.
 
 ## Development notes
 

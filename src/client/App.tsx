@@ -23,6 +23,7 @@ import { ProjectsPage } from './pages/ProjectsPage.tsx';
 import { SessionDetailPage } from './pages/SessionDetailPage.tsx';
 import { SessionsPage } from './pages/SessionsPage.tsx';
 import { ToolsPage } from './pages/ToolsPage.tsx';
+import { ErrorsPage } from './pages/ErrorsPage.tsx';
 import type { PageProps } from './pages/types.ts';
 import { ROUTE_TITLES, pageHash, rangeFromQuery } from './route.ts';
 import { safeLocalStorage } from './storage.ts';
@@ -112,6 +113,7 @@ export function App(): React.ReactElement {
       {route.name === 'models' ? <ModelsPage {...pageProps} /> : null}
       {route.name === 'projects' ? <ProjectsPage {...pageProps} /> : null}
       {route.name === 'tools' ? <ToolsPage {...pageProps} /> : null}
+      {route.name === 'errors' ? <ErrorsPage {...pageProps} /> : null}
       {route.name === 'sessions' ? <SessionsPage {...pageProps} /> : null}
       {route.name === 'session' ? <SessionDetailPage {...pageProps} /> : null}
       {route.name === 'unknown' ? <NotFoundPage {...pageProps} /> : null}

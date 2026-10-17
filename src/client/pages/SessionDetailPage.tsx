@@ -16,6 +16,7 @@ import type { PageProps } from './types.ts';
 import { fetchSessionDetail } from '../api.ts';
 import { DailyActivityChart } from '../components/charts.tsx';
 import { PageHeader } from '../components/PageHeader.tsx';
+import { EstimateStat, EstimateValue } from '../components/Estimate.tsx';
 import { QueryPanel } from '../components/states.tsx';
 import { Badge, Card, Segmented, Stat, ValueCell } from '../components/ui.tsx';
 import { formatDateTime, formatDuration, formatInteger, usageValues } from '../format.ts';
@@ -40,6 +41,7 @@ const STEP_COLUMNS: readonly ColumnSpec[] = [
   { key: 'model', label: 'Model' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
+  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
   { key: 'errors', label: 'Errors' },
   { key: 'tools', label: 'Tools' },
 ];
@@ -165,6 +167,7 @@ function SessionBody(props: {
             <Stat label="Prompts" value={formatInteger(data.prompts)} />
             <Stat label="Tokens" value={values.tokens.text} partial={values.tokens.partial} />
             <Stat label="Recorded cost" value={values.cost.text} partial={values.cost.partial} />
+            <EstimateStat estimate={data.estimate} />
             <Stat label="Cache rate" value={values.cacheRate} />
             <Stat
               label="Active days"
@@ -174,7 +177,7 @@ function SessionBody(props: {
           </div>
 
           <Card title="Daily activity" description={`Assistant steps per local date (${data.range.timezone}).`}>
-            <DailyActivityChart points={data.daily} metric="steps" label="Daily assistant steps" />
+            <DailyActivityChart points={data.daily} estimates={data.dailyEstimates} metric="steps" label="Daily assistant steps" />
           </Card>
         </>
       )}
@@ -242,6 +245,7 @@ function SessionBody(props: {
                       </td>
                       <td data-align="right"><ValueCell value={stepValues.tokens} /></td>
                       <td data-align="right"><ValueCell value={stepValues.cost} /></td>
+                      <td data-align="right"><EstimateValue estimate={step.estimate} /></td>
                       <td>{step.hasError ? <Badge tone="bad">error</Badge> : <span className="dim">none</span>}</td>
                       <td>
                         {step.tools.length === 0 ? (

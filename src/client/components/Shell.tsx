@@ -38,7 +38,7 @@ import {
 import { Segmented } from './ui.tsx';
 
 interface NavItem {
-  name: 'overview' | 'models' | 'projects' | 'tools' | 'sessions';
+  name: 'overview' | 'models' | 'projects' | 'tools' | 'errors' | 'sessions';
   label: string;
   icon: ReactNode;
 }
@@ -48,6 +48,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { name: 'models', label: 'Models', icon: <ModelsIcon /> },
   { name: 'projects', label: 'Projects', icon: <ProjectsIcon /> },
   { name: 'tools', label: 'Tools', icon: <ToolsIcon /> },
+  { name: 'errors', label: 'Errors', icon: <CloseIcon /> },
   { name: 'sessions', label: 'Sessions', icon: <SessionsIcon /> },
 ];
 

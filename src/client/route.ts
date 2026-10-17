@@ -14,7 +14,7 @@
 
 import type { SessionSortKey, StatsRangeKey } from '../shared/api.ts';
 
-export type RouteName = 'overview' | 'models' | 'projects' | 'tools' | 'sessions' | 'session' | 'unknown';
+export type RouteName = 'overview' | 'models' | 'projects' | 'tools' | 'errors' | 'sessions' | 'session' | 'unknown';
 
 export interface ParsedRoute {
   name: RouteName;
@@ -25,11 +25,12 @@ export interface ParsedRoute {
 }
 
 /** Path fragment for every route that has no parameters. */
-export const ROUTE_PATHS: Readonly<Record<'overview' | 'models' | 'projects' | 'tools' | 'sessions', string>> = {
+export const ROUTE_PATHS: Readonly<Record<'overview' | 'models' | 'projects' | 'tools' | 'errors' | 'sessions', string>> = {
   overview: '/overview',
   models: '/models',
   projects: '/projects',
   tools: '/tools',
+  errors: '/errors',
   sessions: '/sessions',
 };
 
@@ -38,6 +39,7 @@ export const ROUTE_TITLES: Readonly<Record<Exclude<RouteName, 'unknown'>, string
   models: 'Models',
   projects: 'Projects',
   tools: 'Tools',
+  errors: 'Errors',
   sessions: 'Sessions',
   session: 'Session detail',
 };
@@ -133,6 +135,7 @@ export function parseHash(hash: string): ParsedRoute {
     case 'models':
     case 'projects':
     case 'tools':
+    case 'errors':
       return { name: head, sessionId: null, query };
     default:
       return { name: 'unknown', sessionId: null, query };
@@ -227,7 +230,7 @@ export function carryFilters(query: Readonly<Record<string, string>>): Record<st
  */
 export function pageHash(
   current: Pick<ParsedRoute, 'query'>,
-  name: 'overview' | 'models' | 'projects' | 'tools' | 'sessions',
+  name: 'overview' | 'models' | 'projects' | 'tools' | 'errors' | 'sessions',
   changes: Readonly<Record<string, string | null | undefined>> = {},
 ): string {
   return buildHash({ name, sessionId: null, query: updateQuery(carryFilters(current.query), changes) });

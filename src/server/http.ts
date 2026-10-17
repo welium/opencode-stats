@@ -148,6 +148,8 @@ function matchApiRoute(pathname: string): ApiRouteMatch | null {
       return { route: 'stats/projects' };
     case '/api/stats/tools':
       return { route: 'stats/tools' };
+    case '/api/stats/errors':
+      return { route: 'stats/errors' };
     case '/api/sessions':
       return { route: 'sessions' };
     default:

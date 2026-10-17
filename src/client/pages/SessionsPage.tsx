@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useId, useMemo, useState } from 'react';
+import { EstimateValue } from '../components/Estimate.tsx';
 
 import type { SessionListRow } from '../../shared/api.ts';
 import type { ColumnSpec } from '../components/ui.tsx';
@@ -172,6 +173,7 @@ export function SessionsPage(props: PageProps): React.ReactElement {
                         onSort={(key) => toggleSort(key, column.initialDir)}
                       />
                     ))}
+                    <th scope="col" data-align="right">API-equivalent estimate</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -248,6 +250,7 @@ function SessionRow(props: { row: SessionListRow; route: PageProps['route'] }): 
       <td data-align="right" className="num">{formatInteger(row.steps)}</td>
       <td data-align="right"><ValueCell value={values.tokens} /></td>
       <td data-align="right"><ValueCell value={values.cost} /></td>
+      <td data-align="right"><EstimateValue estimate={row.estimate} /></td>
     </tr>
   );
 }

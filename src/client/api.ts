@@ -14,6 +14,7 @@
  */
 
 import type {
+  ErrorsResponse,
   ApiErrorCode,
   HealthResponse,
   ModelsResponse,
@@ -160,6 +161,10 @@ export async function fetchProjects(query: StatsQuery, signal?: AbortSignal): Pr
 
 export async function fetchTools(query: StatsQuery, signal?: AbortSignal): Promise<ToolsResponse> {
   return (await getJson(`/api/stats/tools?${buildQuery(query)}`, signal)) as ToolsResponse;
+}
+
+export async function fetchErrors(query: StatsQuery, signal?: AbortSignal): Promise<ErrorsResponse> {
+  return (await getJson(`/api/stats/errors?${buildQuery(query)}`, signal)) as ErrorsResponse;
 }
 
 export async function fetchSessions(query: StatsQuery, signal?: AbortSignal): Promise<SessionsResponse> {

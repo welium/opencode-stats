@@ -1265,6 +1265,14 @@ select.input {
   .topbar-status {
     display: none;
   }
+
+  .card-head {
+    flex-wrap: wrap;
+  }
+
+  .card-titles {
+    flex: 1 1 180px;
+  }
 }
 
 /* ------------------------------------------------------- reduced motion --- */

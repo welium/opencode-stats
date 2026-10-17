@@ -145,6 +145,7 @@ export interface StepRow {
   model: string | null;
   agent: string | null;
   hasError: boolean;
+  errorType?: string;
 }
 
 interface RawStepRow {
@@ -165,6 +166,7 @@ interface RawStepRow {
   model: unknown;
   agent: unknown;
   has_error: unknown;
+  error_type: unknown;
 }
 
 export function buildStepRowsQuery(scope: MetricScope): { sql: string; params: SqlValue[] } {
@@ -201,7 +203,8 @@ SELECT id,
        json_extract(payload, '$.model.providerID') AS provider,
        json_extract(payload, '$.model.id') AS model,
        json_extract(payload, '$.agent') AS agent,
-       (json_extract(payload, '$.error') IS NOT NULL) AS has_error
+       (json_extract(payload, '$.error') IS NOT NULL) AS has_error,
+       json_extract(payload, '$.error.name') AS error_type
   FROM steps
  ORDER BY time_created, id`,
     params: filter.params,
@@ -232,8 +235,15 @@ export function loadStepRows(runner: QueryRunner, scope: MetricScope): StepRow[]
       model: nonEmptyString(row.model),
       agent: nonEmptyString(row.agent),
       hasError: row.has_error === 1 || row.has_error === true,
+      errorType: safeErrorType(row.error_type),
     };
   });
+}
+
+// Recognized schema tags only; arbitrary strings may contain secrets or prose.
+function safeErrorType(value: unknown): string {
+  const types = ['ProviderAuthError', 'UnknownError', 'MessageOutputLengthError', 'MessageAbortedError', 'APIError', 'ContextOverflowError', 'StructuredOutputError'];
+  return typeof value === 'string' && types.includes(value) ? value : 'UnknownError';
 }
 
 // ---------------------------------------------------------------------------
@@ -899,8 +909,8 @@ SELECT s.id AS id,
 }
 
 /** Agent usage rows from assistant steps (§4 agent names are open-ended). */
-export function buildAgentRows(groups: ReadonlyMap<string | null, readonly StepRow[]>): AgentUsageRow[] {
-  const rows: AgentUsageRow[] = [];
+export function buildAgentRows(groups: ReadonlyMap<string | null, readonly StepRow[]>): Omit<AgentUsageRow, 'estimate'>[] {
+  const rows: Omit<AgentUsageRow, 'estimate'>[] = [];
   for (const [agent, steps] of groups) {
     const accumulator = createUsageAccumulator();
     for (const step of steps) addStep(accumulator, step);

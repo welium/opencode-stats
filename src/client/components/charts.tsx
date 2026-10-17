@@ -18,25 +18,28 @@
 
 import { useState } from 'react';
 
-import type { DailyActivityPoint } from '../../shared/api.ts';
+import type { CostEstimate, DailyActivityPoint, DailyEstimatePoint } from '../../shared/api.ts';
+import { EstimateValue } from './Estimate.tsx';
 
 import { UNAVAILABLE, formatCompact, formatCost, formatInteger, shortDateKey } from '../format.ts';
 
-export type DailyMetric = 'steps' | 'tokens' | 'cost';
+export type DailyMetric = 'steps' | 'tokens' | 'cost' | 'estimate';
 
 export const DAILY_METRIC_OPTIONS: ReadonlyArray<{ value: DailyMetric; label: string }> = [
   { value: 'steps', label: 'Steps' },
   { value: 'tokens', label: 'Tokens' },
   { value: 'cost', label: 'Cost' },
+  { value: 'estimate', label: 'Estimate' },
 ];
 
-function metricValue(point: DailyActivityPoint, metric: DailyMetric): number | null {
+function metricValue(point: DailyActivityPoint, metric: DailyMetric, estimate: CostEstimate | undefined): number | null {
   if (metric === 'steps') return point.steps;
+  if (metric === 'estimate') return estimate?.cost ?? null;
   return point[metric];
 }
 
 function formatMetric(value: number, metric: DailyMetric): string {
-  if (metric === 'cost') return formatCost(value);
+  if (metric === 'cost' || metric === 'estimate') return formatCost(value);
   if (metric === 'tokens') return formatCompact(value);
   return formatInteger(value);
 }
@@ -45,10 +48,12 @@ export const METRIC_LABELS: Readonly<Record<DailyMetric, string>> = {
   steps: 'Assistant steps',
   tokens: 'Tokens',
   cost: 'Recorded cost',
+  estimate: 'API-equivalent estimate',
 };
 
 export interface DailyActivityChartProps {
   points: readonly DailyActivityPoint[];
+  estimates?: readonly DailyEstimatePoint[];
   metric: DailyMetric;
   height?: number;
   /** Describes the series in the accessible summary, e.g. "Daily assistant steps". */
@@ -71,7 +76,9 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
   const height = props.height ?? 200;
   const [tableOpen, setTableOpen] = useState(false);
 
-  const values = points.map((point) => metricValue(point, metric));
+  const estimates = new Map(props.estimates?.map((point) => [point.date, point.estimate]) ?? []);
+  const values = points.map((point) => metricValue(point, metric, estimates.get(point.date)));
+  const totalLabel = metric === 'estimate' && props.estimates?.some((point) => point.estimate.status !== 'complete') ? 'Priced subtotal' : 'Total';
   const measured = values.filter((value): value is number => value !== null);
   const missing = values.length - measured.length;
   const max = measured.length === 0 ? 0 : Math.max(...measured);
@@ -88,7 +95,7 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
   const summary =
     measured.length === 0
       ? `${props.label}: no measured values in this range.`
-      : `${props.label}: ${formatMetric(total, metric)} total across ${String(measured.length)} day${measured.length === 1 ? '' : 's'}, ${
+      : `${props.label}: ${totalLabel.toLowerCase()} ${formatMetric(total, metric)} across ${String(measured.length)} day${measured.length === 1 ? '' : 's'}, ${
           peakIndex === -1 ? 'no peak' : `peak ${formatMetric(max, metric)} on ${points[peakIndex]?.date ?? ''}`
         }.${missing > 0 ? ` ${String(missing)} day${missing === 1 ? '' : 's'} have no measured value.` : ''}`;
 
@@ -152,7 +159,7 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
         <span>
           {measured.length === 0
             ? 'No measured values in this range.'
-            : `Total ${formatMetric(total, metric)} over ${String(measured.length)} measured day${measured.length === 1 ? '' : 's'}.`}
+            : `${totalLabel} ${formatMetric(total, metric)} over ${String(measured.length)} measured day${measured.length === 1 ? '' : 's'}.`}
         </span>
         {peakIndex === -1 ? null : (
           <span className="dim">{`Peak ${formatMetric(max, metric)} on ${points[peakIndex]?.date ?? ''}.`}</span>
@@ -177,6 +184,7 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
                     <th scope="col" data-align="right">
                       {METRIC_LABELS[metric]}
                     </th>
+                    {props.estimates === undefined || metric === 'estimate' ? null : <th scope="col" data-align="right">API-equivalent estimate</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -186,8 +194,9 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
                       <tr key={point.date}>
                         <th scope="row">{point.date}</th>
                         <td data-align="right" className="num">
-                          {value === null || value === undefined ? UNAVAILABLE : formatMetric(value, metric)}
+                          {metric === 'estimate' ? <EstimateValue estimate={estimates.get(point.date)} /> : value === null || value === undefined ? UNAVAILABLE : formatMetric(value, metric)}
                         </td>
+                        {props.estimates === undefined || metric === 'estimate' ? null : <td data-align="right"><EstimateValue estimate={estimates.get(point.date)} /></td>}
                       </tr>
                     );
                   })}
