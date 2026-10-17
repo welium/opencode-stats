@@ -75,14 +75,14 @@ export function Stat(props: StatProps): React.ReactElement {
 }
 
 /** A value cell: `—` when unavailable, an asterisk when partial. */
-export function ValueCell(props: { value: FormattedValue; className?: string }): React.ReactElement {
+export function ValueCell(props: { value: FormattedValue; className?: string; partialHint?: string }): React.ReactElement {
   const unavailable = props.value.text === UNAVAILABLE;
   return (
     <span
       className={`num ${props.className ?? ''}`.trim()}
       data-unavailable={unavailable}
       {...(props.value.partial
-        ? { title: PARTIAL_TOTAL_HINT, 'aria-label': `${props.value.text} (measured subtotal)` }
+        ? { title: props.partialHint ?? PARTIAL_TOTAL_HINT, 'aria-label': `${props.value.text} (${props.partialHint ?? 'measured subtotal'})` }
         : {})}
     >
       {props.value.text}

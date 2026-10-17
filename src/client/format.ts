@@ -159,6 +159,16 @@ export function formatTokenTotal(tokens: TokenTotals, format: (value: number) =>
   return { text: format(sum), partial: true };
 }
 
+/** Models can show a marked approximation from available input/cache sums. */
+export function measuredCacheRate(tokens: TokenTotals): { value: number | null; partial: boolean } {
+  const denominator = (tokens.input.value ?? 0) + (tokens.cacheRead.value ?? 0) + (tokens.cacheWrite.value ?? 0);
+  if (denominator <= 0) return { value: null, partial: false };
+  return {
+    value: (tokens.cacheRead.value ?? 0) / denominator,
+    partial: !tokens.input.complete || !tokens.cacheRead.complete || !tokens.cacheWrite.complete,
+  };
+}
+
 /** Token total plus recorded cost for one usage group, already formatted. */
 export interface UsageValues {
   tokens: FormattedValue;

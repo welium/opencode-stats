@@ -26,6 +26,7 @@ import {
   formatTime,
   formatTokenTotal,
   measuredTokenSum,
+  measuredCacheRate,
   shortDateKey,
   usageValues,
 } from '../../src/client/format.ts';
@@ -50,6 +51,32 @@ function tokens(overrides: Partial<Record<keyof Omit<TokenTotals, 'total'>, Meas
     total,
   };
 }
+
+describe('Models measured cache rate', () => {
+  it('uses the full input denominator including cache writes for complete measurements', () => {
+    assert.deepEqual(measuredCacheRate(tokens({ input: measured(600, true), cacheRead: measured(300, true), cacheWrite: measured(100, true) })),
+      { value: 0.3, partial: false });
+  });
+
+  it('estimates from measured sums and marks incomplete input/cache coverage', () => {
+    assert.deepEqual(measuredCacheRate(tokens({ input: measured(600, false), cacheRead: measured(300, true), cacheWrite: measured(100, true) })),
+      { value: 0.3, partial: true });
+    assert.deepEqual(measuredCacheRate(tokens({ input: measured(600, true), cacheRead: measured(300, false), cacheWrite: measured(null, false) })),
+      { value: 1 / 3, partial: true });
+    assert.deepEqual(measuredCacheRate(tokens({ input: measured(null, false), cacheRead: measured(300, true), cacheWrite: measured(100, true) })),
+      { value: 0.75, partial: true });
+    assert.deepEqual(measuredCacheRate(tokens({ input: measured(600, true), cacheRead: measured(null, false) })),
+      { value: 0, partial: true });
+  });
+
+  it('keeps a zero/missing denominator unavailable and ignores output-only gaps', () => {
+    assert.deepEqual(measuredCacheRate(tokens()), { value: null, partial: false });
+    assert.deepEqual(measuredCacheRate(tokens({ input: measured(null, false), cacheRead: measured(null, false), cacheWrite: measured(null, false) })),
+      { value: null, partial: false });
+    assert.deepEqual(measuredCacheRate(tokens({ input: measured(100, true), output: measured(null, false) })),
+      { value: 0, partial: false });
+  });
+});
 
 describe('unavailable values', () => {
   it('renders `—` for null, undefined, NaN, and Infinity', () => {

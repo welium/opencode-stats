@@ -269,6 +269,11 @@ stay in an unknown group. Session detail uses the selected range unless “All
 session activity” is chosen; children are not recursively added to parents.
 Missing measurements are not zeros: complete combined totals/rates require the
 needed coverage; measured subtotals are labeled, and unavailable values show `—`.
+On the Models tab, incomplete cache rates are approximated using the available
+measured cache-read sum divided by available input + cache-read + cache-write
+sums. Unreported categories contribute no observed tokens. These approximations
+carry `*` and sort by the displayed rate; a zero measured denominator stays `—`.
+Other views and API cache rates still require complete input/cache coverage.
 TTFT and generation speed are not inferred from completion timestamps.
 
 Refresh re-reads health and every active-page breakdown/detail, without polling.

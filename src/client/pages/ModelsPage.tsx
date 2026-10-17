@@ -23,7 +23,7 @@ import { EstimateValue } from '../components/Estimate.tsx';
 import { sortRows, useSort } from '../components/sorting.ts';
 import { QueryPanel } from '../components/states.tsx';
 import { Card, SortRow, Stat, ValueCell } from '../components/ui.tsx';
-import { UNAVAILABLE, formatInteger, usageValues } from '../format.ts';
+import { UNAVAILABLE, formatInteger, formatPercent, measuredCacheRate, usageValues } from '../format.ts';
 import { rangeLabel } from '../route.ts';
 import { useQuery } from '../useQuery.ts';
 
@@ -54,7 +54,7 @@ function sortValue(row: ModelUsageRow, key: string): SortValue {
     case 'tokens':
       return tokenSortValue(row.usage.tokens);
     case 'cacheRate':
-      return row.usage.cacheRate;
+      return measuredCacheRate(row.usage.tokens).value;
     case 'cost':
       return row.usage.cost.value ?? null;
     default:
@@ -139,6 +139,7 @@ export function ModelsPage(props: PageProps): React.ReactElement {
                     <tbody>
                       {rows.map((row) => {
                         const values = usageValues(row.usage);
+                        const cacheRate = measuredCacheRate(row.usage.tokens);
                         return (
                           <tr key={`${row.provider ?? ''}\u0000${row.model ?? ''}`}>
                             <th scope="row" className="cell-primary" data-wrap="true">
@@ -156,8 +157,11 @@ export function ModelsPage(props: PageProps): React.ReactElement {
                             <td data-align="right" className="num">{formatInteger(row.steps)}</td>
                             <td data-align="right" className="num">{formatInteger(row.sessions)}</td>
                             <td data-align="right"><ValueCell value={values.tokens} /></td>
-                            <td data-align="right" className="num" data-unavailable={values.cacheRate === UNAVAILABLE}>
-                              {values.cacheRate}
+                            <td data-align="right">
+                              <ValueCell
+                                value={{ text: formatPercent(cacheRate.value), partial: cacheRate.partial }}
+                                partialHint="Estimated from incomplete token data"
+                              />
                             </td>
                             <td data-align="right"><ValueCell value={values.cost} /></td>
                             <td data-align="right"><EstimateValue estimate={row.estimate} /></td>
