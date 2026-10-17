@@ -194,12 +194,12 @@ SELECT id,
        project_id,
        (owning_session_id IS NOT NULL) AS has_session,
        (payload IS NULL) AS unreadable,
-       json_extract(payload, '$.cost') AS cost,
-       json_extract(payload, '$.tokens.input') AS input,
-       json_extract(payload, '$.tokens.output') AS output,
-       json_extract(payload, '$.tokens.reasoning') AS reasoning,
-       json_extract(payload, '$.tokens.cache.read') AS cache_read,
-       json_extract(payload, '$.tokens.cache.write') AS cache_write,
+       CASE WHEN json_type(payload, '$.cost') IN ('integer', 'real') THEN json_extract(payload, '$.cost') END AS cost,
+       CASE WHEN json_type(payload, '$.tokens.input') IN ('integer', 'real') THEN json_extract(payload, '$.tokens.input') END AS input,
+       CASE WHEN json_type(payload, '$.tokens.output') IN ('integer', 'real') THEN json_extract(payload, '$.tokens.output') END AS output,
+       CASE WHEN json_type(payload, '$.tokens.reasoning') IN ('integer', 'real') THEN json_extract(payload, '$.tokens.reasoning') END AS reasoning,
+       CASE WHEN json_type(payload, '$.tokens.cache.read') IN ('integer', 'real') THEN json_extract(payload, '$.tokens.cache.read') END AS cache_read,
+       CASE WHEN json_type(payload, '$.tokens.cache.write') IN ('integer', 'real') THEN json_extract(payload, '$.tokens.cache.write') END AS cache_write,
        json_extract(payload, '$.model.providerID') AS provider,
        json_extract(payload, '$.model.id') AS model,
        json_extract(payload, '$.agent') AS agent,
@@ -225,12 +225,12 @@ export function loadStepRows(runner: QueryRunner, scope: MetricScope): StepRow[]
       timeCreated: finiteNumber(row.time_created) ?? 0,
       projectId: row.project_id === null ? null : String(row.project_id),
       unreadable: row.unreadable === 1 || row.unreadable === true,
-      cost: finiteNumber(row.cost),
-      input: finiteNumber(row.input),
-      output: finiteNumber(row.output),
-      reasoning: finiteNumber(row.reasoning),
-      cacheRead: finiteNumber(row.cache_read),
-      cacheWrite: finiteNumber(row.cache_write),
+      cost: measurement(row.cost),
+      input: measurement(row.input),
+      output: measurement(row.output),
+      reasoning: measurement(row.reasoning),
+      cacheRead: measurement(row.cache_read),
+      cacheWrite: measurement(row.cache_write),
       provider: nonEmptyString(row.provider),
       model: nonEmptyString(row.model),
       agent: nonEmptyString(row.agent),
@@ -238,6 +238,10 @@ export function loadStepRows(runner: QueryRunner, scope: MetricScope): StepRow[]
       errorType: safeErrorType(row.error_type),
     };
   });
+}
+
+function measurement(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 // Recognized schema tags only; arbitrary strings may contain secrets or prose.
@@ -737,7 +741,7 @@ export function addPromptToDaily(map: Map<string, DailyAccumulator>, date: strin
  * Zero-fill the resolved local dates.
  *
  * A date with no steps is a fully measured zero. A date with steps but no
- * measured token/cost value reports null instead of an invented zero.
+ * complete token/cost coverage reports null instead of a partial total.
  */
 export function buildDaily(
   map: ReadonlyMap<string, DailyAccumulator>,
@@ -750,8 +754,8 @@ export function buildDaily(
       date,
       steps: entry.steps,
       prompts: entry.prompts,
-      tokens: entry.steps === 0 ? 0 : entry.tokenMeasured === 0 ? null : entry.tokenSum,
-      cost: entry.steps === 0 ? 0 : entry.costMeasured === 0 ? null : entry.costSum,
+      tokens: entry.tokenMeasured === entry.steps * 5 ? entry.tokenSum : null,
+      cost: entry.costMeasured === entry.steps ? entry.costSum : null,
     };
   });
 }

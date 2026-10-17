@@ -140,7 +140,7 @@ describe('GET /api/stats/overview', () => {
     );
     assert.deepEqual(body.daily[0], { date: '2026-06-09', steps: 3, prompts: 1, tokens: 1251, cost: 1.251 });
     assert.deepEqual(body.daily[1], { date: '2026-06-10', steps: 2, prompts: 0, tokens: 45, cost: 0.55 });
-    assert.deepEqual(body.daily[2], { date: '2026-06-11', steps: 3, prompts: 0, tokens: 102, cost: 0.01 });
+    assert.deepEqual(body.daily[2], { date: '2026-06-11', steps: 3, prompts: 0, tokens: null, cost: null });
     assert.deepEqual(body.daily[3], { date: '2026-06-12', steps: 1, prompts: 1, tokens: 10, cost: 0.07 });
     assert.deepEqual(body.daily[4], { date: '2026-06-13', steps: 1, prompts: 1, tokens: 10, cost: 0.02 });
     assert.deepEqual(body.daily[5], { date: '2026-06-14', steps: 1, prompts: 2, tokens: 33, cost: 0.11 });

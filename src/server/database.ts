@@ -217,7 +217,7 @@ export const SQLITE_NOTADB = 26;
 function classifyFailure(error: unknown, file: FileState): DatabaseState {
   const errcode = (error as { errcode?: unknown } | null)?.errcode;
   if (typeof errcode === 'number') {
-    switch (errcode) {
+    switch (errcode & 0xff) {
       case SQLITE_BUSY:
       case SQLITE_LOCKED:
         return 'busy';
@@ -228,6 +228,9 @@ function classifyFailure(error: unknown, file: FileState): DatabaseState {
         // SQLITE_CANTOPEN covers both "file does not exist" and "file exists
         // but is not readable"; the filesystem state tells them apart.
         return file.kind === 'missing' ? 'missing' : 'unreadable';
+      case 3: // SQLITE_PERM
+      case 10: // SQLITE_IOERR (including extended read errors)
+        return 'unreadable';
       default:
         break;
     }
@@ -398,18 +401,27 @@ export function createDatabaseAdapter(options: DatabaseAdapterOptions): Database
 
     inspect(): DatabaseInspection {
       const result = tryOpen();
-      if (result.ok) {
-        return { status: describeStatus(options.path, options.pathSource, 'ready'), schema: result.schema };
+      if (!result.ok) return { status: result.status, schema: result.schema };
+      try {
+        // A cached handle is not proof of current readability (e.g. DELETE
+        // journal mode can become exclusively locked after the first read).
+        this.withRead((db) => {
+          db.prepare('SELECT name FROM sqlite_master LIMIT 1').all();
+          for (const table of REQUIRED_SCHEMA) db.prepare(`SELECT 1 FROM "${table.table}" LIMIT 1`).all();
+        });
+        return { status: describeStatus(options.path, options.pathSource, 'ready'), schema: handleSchema ?? uncheckedSchema() };
+      } catch (error) {
+        if (!(error instanceof DatabaseUnavailableError)) throw error;
+        return { status: error.status, schema: handleSchema ?? uncheckedSchema() };
       }
-      return { status: result.status, schema: result.schema };
     },
 
     withRead<T>(run: (db: DatabaseSync) => T): T {
       const result = tryOpen();
       if (!result.ok) throw new DatabaseUnavailableError(result.status);
       const db = result.db;
-      db.exec('BEGIN');
       try {
+        db.exec('BEGIN');
         const value = run(db);
         db.exec('COMMIT');
         return value;
@@ -418,6 +430,15 @@ export function createDatabaseAdapter(options: DatabaseAdapterOptions): Database
           db.exec('ROLLBACK');
         } catch {
           // The transaction may already have been rolled back by SQLite.
+        }
+        // Only operational SQLite errors become availability failures. SQL
+        // mistakes and arbitrary callback exceptions remain internal errors.
+        const sqliteError = error as { code?: unknown; errcode?: unknown } | null;
+        const code = sqliteError?.errcode;
+        if (sqliteError?.code === 'ERR_SQLITE_ERROR' && typeof code === 'number' && [3, 5, 6, 10, 11, 14, 26].includes(code & 0xff)) {
+          const state = classifyFailure(error, statDatabaseFile(options.path));
+          closeHandle();
+          throw new DatabaseUnavailableError(describeStatus(options.path, options.pathSource, state, sqliteErrorDetail(error)));
         }
         throw error;
       }

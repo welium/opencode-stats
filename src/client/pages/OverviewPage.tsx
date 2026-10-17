@@ -17,7 +17,7 @@ import type { PageProps } from './types.ts';
 
 import { fetchModels, fetchOverview, fetchProjects } from '../api.ts';
 import { DailyActivityChart, DAILY_METRIC_OPTIONS, METRIC_LABELS, ShareBar } from '../components/charts.tsx';
-import { PageHeader } from '../components/PageHeader.tsx';
+import { FilterChip, PageHeader } from '../components/PageHeader.tsx';
 import { EstimateStat, EstimateValue } from '../components/Estimate.tsx';
 import { sortRows, useSort } from '../components/sorting.ts';
 import { QueryPanel } from '../components/states.tsx';
@@ -139,16 +139,17 @@ function tokenMix(tokens: TokenTotals): Array<{ key: string; label: string; colo
 
 export function OverviewPage(props: PageProps): React.ReactElement {
   const { rangeKey, refreshToken, route } = props;
+  const projectId = route.query['projectId'] ?? null;
   const [metric, setMetric] = useState<DailyMetric>('steps');
   const agentSort = useSort('tokens', 'desc');
   const modelSort = useSort('tokens', 'desc');
   const projectSort = useSort('tokens', 'desc');
 
-  const state = useQuery<OverviewBundle>(`overview:${rangeKey}`, refreshToken, async (signal) => {
+  const state = useQuery<OverviewBundle>(`overview:${rangeKey}:${projectId ?? ''}`, refreshToken, async (signal) => {
     const [overview, models, projects] = await Promise.all([
-      fetchOverview({ range: rangeKey }, signal),
-      fetchModels({ range: rangeKey }, signal),
-      fetchProjects({ range: rangeKey }, signal),
+      fetchOverview({ range: rangeKey, projectId }, signal),
+      fetchModels({ range: rangeKey, projectId }, signal),
+      fetchProjects({ range: rangeKey, projectId }, signal),
     ]);
     return { overview, models, projects };
   });
@@ -164,6 +165,7 @@ export function OverviewPage(props: PageProps): React.ReactElement {
     <div className="page">
       <PageHeader
         title="Overview"
+        actions={projectId === null ? undefined : <FilterChip label="Project" value={projectId} onClear={() => props.setParams({ projectId: null })} />}
         description={`Assistant usage recorded in the local database for ${rangeLabel(rangeKey).toLowerCase()}.`}
       />
 

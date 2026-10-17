@@ -78,9 +78,10 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
 
   const estimates = new Map(props.estimates?.map((point) => [point.date, point.estimate]) ?? []);
   const values = points.map((point) => metricValue(point, metric, estimates.get(point.date)));
-  const totalLabel = metric === 'estimate' && props.estimates?.some((point) => point.estimate.status !== 'complete') ? 'Priced subtotal' : 'Total';
   const measured = values.filter((value): value is number => value !== null);
   const missing = values.length - measured.length;
+  const totalLabel = metric === 'estimate' && props.estimates?.some((point) => point.estimate.status !== 'complete')
+    ? 'Priced subtotal' : missing > 0 ? 'Measured subtotal' : 'Total';
   const max = measured.length === 0 ? 0 : Math.max(...measured);
   const total = measured.reduce((sum, value) => sum + value, 0);
   let peakIndex = -1;

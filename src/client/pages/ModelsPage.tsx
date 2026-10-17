@@ -64,12 +64,13 @@ function sortValue(row: ModelUsageRow, key: string): SortValue {
 export function ModelsPage(props: PageProps): React.ReactElement {
   const { rangeKey, refreshToken, route } = props;
   const modelFilter = route.query['model'] ?? null;
+  const projectId = route.query['projectId'] ?? null;
   const sort = useSort('tokens', 'desc');
 
   const state = useQuery(
-    `models:${rangeKey}:${modelFilter ?? ''}`,
+    `models:${rangeKey}:${modelFilter ?? ''}:${projectId ?? ''}`,
     refreshToken,
-    (signal) => fetchModels({ range: rangeKey, model: modelFilter }, signal),
+    (signal) => fetchModels({ range: rangeKey, model: modelFilter, projectId }, signal),
   );
   const rows = useMemo(() => sortRows(state.data?.models ?? [], sort.sort, sortValue), [state.data, sort.sort]);
 
@@ -79,9 +80,10 @@ export function ModelsPage(props: PageProps): React.ReactElement {
         title="Models"
         description={`Assistant-step usage per provider/model for ${rangeLabel(rangeKey).toLowerCase()}.`}
         actions={
-          modelFilter === null ? undefined : (
-            <FilterChip label="Model" value={modelFilter} onClear={() => props.setParams({ model: null })} />
-          )
+          <>
+            {projectId === null ? null : <FilterChip label="Project" value={projectId} onClear={() => props.setParams({ projectId: null })} />}
+            {modelFilter === null ? null : <FilterChip label="Model" value={modelFilter} onClear={() => props.setParams({ model: null })} />}
+          </>
         }
       />
 

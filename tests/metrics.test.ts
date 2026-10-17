@@ -350,8 +350,8 @@ describe('daily series and activity', () => {
 
     assert.deepEqual(series[0], { date: '2026-06-08', steps: 0, prompts: 0, tokens: 0, cost: 0 }, 'a missing date is a measured zero');
     assert.deepEqual(series[1], { date: '2026-06-09', steps: 3, prompts: 1, tokens: 1251, cost: 1.251 }, 'inclusive lower bound');
-    // 2026-06-11 has the unreadable step, so measured tokens come only from r1/r3.
-    assert.deepEqual(series[2], { date: '2026-06-11', steps: 3, prompts: 0, tokens: 102, cost: 0.01 });
+    // The unreadable step leaves required coverage incomplete for this date.
+    assert.deepEqual(series[2], { date: '2026-06-11', steps: 3, prompts: 0, tokens: null, cost: null });
     assert.deepEqual(series[3], { date: '2026-06-15', steps: 0, prompts: 0, tokens: 0, cost: 0 });
   });
 
