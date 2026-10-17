@@ -84,7 +84,9 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
   const activeIndex = points.findIndex((point) => point.date === activeDate);
   const activePoint = points[activeIndex];
   const activeEstimate = activePoint === undefined ? undefined : estimates.get(activePoint.date);
-  const detailLabel = activePoint === undefined ? undefined : `${activePoint.date}. ${formatInteger(activePoint.steps)} steps. ${formatInteger(activePoint.tokens)} tokens. Recorded cost ${formatCost(activePoint.cost)}. API-equivalent estimate ${formatCost(activeEstimate?.cost)}${activeEstimate?.status === 'partial' ? ', partial subtotal' : ''}.`;
+  const tokenCoverage = (point: DailyActivityPoint): string => point.tokenCompleteSteps < point.steps
+    ? ` (${point.tokens === null ? 'unavailable' : 'partial subtotal'}; ${formatInteger(point.tokenCompleteSteps)}/${formatInteger(point.steps)} steps fully reported)` : '';
+  const detailLabel = activePoint === undefined ? undefined : `${activePoint.date}. ${formatInteger(activePoint.steps)} steps. ${formatInteger(activePoint.tokens)} tokens${tokenCoverage(activePoint)}. Recorded cost ${formatCost(activePoint.cost)}. API-equivalent estimate ${formatCost(activeEstimate?.cost)}${activeEstimate?.status === 'partial' ? ', partial subtotal' : ''}.`;
 
   function selectPointerDay(event: React.PointerEvent<HTMLDivElement>): void {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -95,7 +97,7 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
   const measured = values.filter((value): value is number => value !== null);
   const missing = values.length - measured.length;
   const totalLabel = metric === 'estimate' && props.estimates?.some((point) => point.estimate.status !== 'complete')
-    ? 'Priced subtotal' : missing > 0 ? 'Measured subtotal' : 'Total';
+    ? 'Priced subtotal' : missing > 0 || (metric === 'tokens' && points.some((point) => point.tokenCompleteSteps < point.steps)) ? 'Measured subtotal' : 'Total';
   const max = measured.length === 0 ? 0 : Math.max(...measured);
   const total = measured.reduce((sum, value) => sum + value, 0);
   let peakIndex = -1;
@@ -207,7 +209,7 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
               <strong>{activePoint.date}</strong>
               <dl>
                 <div><dt>Steps</dt><dd>{formatInteger(activePoint.steps)}</dd></div>
-                <div><dt>Tokens</dt><dd>{formatInteger(activePoint.tokens)}</dd></div>
+                <div><dt>Tokens</dt><dd>{formatInteger(activePoint.tokens)}{tokenCoverage(activePoint)}</dd></div>
                 <div><dt>Recorded cost</dt><dd>{formatCost(activePoint.cost)}</dd></div>
                 <div><dt>API-equivalent estimate</dt><dd><EstimateValue estimate={activeEstimate} /></dd></div>
               </dl>
@@ -255,7 +257,8 @@ export function DailyActivityChart(props: DailyActivityChartProps): React.ReactE
                       <tr key={point.date}>
                         <th scope="row">{point.date}</th>
                         <td data-align="right" className="num">
-                          {metric === 'estimate' ? <EstimateValue estimate={estimates.get(point.date)} /> : value === null || value === undefined ? UNAVAILABLE : formatMetric(value, metric)}
+                           {metric === 'estimate' ? <EstimateValue estimate={estimates.get(point.date)} /> : value === null || value === undefined ? UNAVAILABLE : formatMetric(value, metric)}
+                           {metric === 'tokens' ? tokenCoverage(point) : null}
                         </td>
                         {props.estimates === undefined || metric === 'estimate' ? null : <td data-align="right"><EstimateValue estimate={estimates.get(point.date)} /></td>}
                       </tr>

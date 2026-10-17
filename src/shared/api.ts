@@ -219,6 +219,8 @@ export interface DailyActivityPoint {
   prompts: number;
   /** Measured token subtotal for the date; null when steps exist but none measured tokens. */
   tokens: number | null;
+  /** Steps with all five token categories measured; compare with steps for coverage. */
+  tokenCompleteSteps: number;
   /** Measured recorded cost for the date; null when steps exist but none recorded cost. */
   cost: number | null;
 }

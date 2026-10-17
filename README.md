@@ -269,6 +269,10 @@ stay in an unknown group. Session detail uses the selected range unless “All
 session activity” is chosen; children are not recursively added to parents.
 Missing measurements are not zeros: complete combined totals/rates require the
 needed coverage; measured subtotals are labeled, and unavailable values show `—`.
+Daily token charts retain available measurements as subtotals when some usage is
+missing, with fully reported step coverage in daily details and the data table.
+Days with steps but no token measurements remain unavailable; dates without steps
+show zero. Daily recorded cost still requires complete coverage.
 On the Models tab, incomplete cache rates are approximated using the available
 measured cache-read sum divided by available input + cache-read + cache-write
 sums. Unreported categories contribute no observed tokens. These approximations

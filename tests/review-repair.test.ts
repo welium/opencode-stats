@@ -86,7 +86,8 @@ for (const invalid of [-1, true, false, '100', {}, [], null, 1e999]) {
         assert.equal(data.usage.tokens[category].measured, 1);
       }
       const day = data.daily.find((point) => point.steps > 0)!;
-      assert.equal(day.tokens, null);
+      assert.equal(day.tokens, 1250);
+      assert.equal(day.tokenCompleteSteps, 1);
       assert.equal(day.cost, null);
       assert.equal(data.estimate.status, 'partial');
       assert.equal(data.estimate.pricedSteps, 1);
@@ -100,6 +101,7 @@ for (const invalid of [-1, true, false, '100', {}, [], null, 1e999]) {
       assert.equal(zero.usage.cost.complete, true);
       assert.equal(zero.usage.tokens.total, 1250);
       assert.equal(zero.daily.find((point) => point.steps > 0)?.tokens, 1250);
+      assert.equal(zero.daily.find((point) => point.steps > 0)?.tokenCompleteSteps, 2);
       assert.equal(zero.daily.find((point) => point.steps > 0)?.cost, 7);
       assert.equal(zero.estimate.status, 'complete');
     } finally {
@@ -108,7 +110,7 @@ for (const invalid of [-1, true, false, '100', {}, [], null, 1e999]) {
   });
 }
 
-it('does not promote an input-only step plus complete usage to a daily total', async () => {
+it('retains input-only usage in a daily subtotal with incomplete coverage', async () => {
   const dir = createTempDir('opencode-partial-day-');
   const path = join(dir, 'db');
   createPhase4Fixture(path);
@@ -121,7 +123,8 @@ it('does not promote an input-only step plus complete usage to a daily total', a
     assert.equal(data.usage.tokens.input.value, 700);
     assert.equal(data.usage.tokens.total, null);
     assert.equal(data.usage.cost.complete, false);
-    assert.equal(data.daily.find((point) => point.steps > 0)?.tokens, null);
+    assert.equal(data.daily.find((point) => point.steps > 0)?.tokens, 1350);
+    assert.equal(data.daily.find((point) => point.steps > 0)?.tokenCompleteSteps, 1);
     assert.equal(data.daily.find((point) => point.steps > 0)?.cost, null);
   } finally {
     await server.close(); writer.close(); adapter.close(); removeTempDir(dir);

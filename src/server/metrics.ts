@@ -695,12 +695,13 @@ export interface DailyAccumulator {
   prompts: number;
   tokenSum: number;
   tokenMeasured: number;
+  tokenCompleteSteps: number;
   costSum: number;
   costMeasured: number;
 }
 
 function emptyDaily(): DailyAccumulator {
-  return { steps: 0, prompts: 0, tokenSum: 0, tokenMeasured: 0, costSum: 0, costMeasured: 0 };
+  return { steps: 0, prompts: 0, tokenSum: 0, tokenMeasured: 0, tokenCompleteSteps: 0, costSum: 0, costMeasured: 0 };
 }
 
 export function createDailyMap(): Map<string, DailyAccumulator> {
@@ -723,6 +724,7 @@ export function addStepToDaily(
 ): void {
   const entry = dailyEntry(map, date);
   entry.steps += 1;
+  if (categories.length === 5) entry.tokenCompleteSteps += 1;
   for (const value of categories) {
     if (value === null) continue;
     entry.tokenSum += value;
@@ -741,8 +743,9 @@ export function addPromptToDaily(map: Map<string, DailyAccumulator>, date: strin
 /**
  * Zero-fill the resolved local dates.
  *
- * A date with no steps is a fully measured zero. A date with steps but no
- * complete token/cost coverage reports null instead of a partial total.
+ * A date with no steps is a measured zero. Tokens retain measured subtotals
+ * with step coverage; entirely unmeasured dates remain unavailable.
+ * Recorded cost still requires complete coverage.
  */
 export function buildDaily(
   map: ReadonlyMap<string, DailyAccumulator>,
@@ -750,12 +753,13 @@ export function buildDaily(
 ): DailyActivityPoint[] {
   return dateKeys.map((date) => {
     const entry = map.get(date);
-    if (entry === undefined) return { date, steps: 0, prompts: 0, tokens: 0, cost: 0 };
+    if (entry === undefined) return { date, steps: 0, prompts: 0, tokens: 0, tokenCompleteSteps: 0, cost: 0 };
     return {
       date,
       steps: entry.steps,
       prompts: entry.prompts,
-      tokens: entry.tokenMeasured === entry.steps * 5 ? entry.tokenSum : null,
+      tokens: entry.steps === 0 || entry.tokenMeasured > 0 ? entry.tokenSum : null,
+      tokenCompleteSteps: entry.tokenCompleteSteps,
       cost: entry.costMeasured === entry.steps ? entry.costSum : null,
     };
   });

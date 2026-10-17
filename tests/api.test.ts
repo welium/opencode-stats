@@ -138,13 +138,13 @@ describe('GET /api/stats/overview', () => {
       body.daily.map((point) => point.date),
       ['2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12', '2026-06-13', '2026-06-14', '2026-06-15'],
     );
-    assert.deepEqual(body.daily[0], { date: '2026-06-09', steps: 3, prompts: 1, tokens: 1251, cost: 1.251 });
-    assert.deepEqual(body.daily[1], { date: '2026-06-10', steps: 2, prompts: 0, tokens: 45, cost: 0.55 });
-    assert.deepEqual(body.daily[2], { date: '2026-06-11', steps: 3, prompts: 0, tokens: null, cost: null });
-    assert.deepEqual(body.daily[3], { date: '2026-06-12', steps: 1, prompts: 1, tokens: 10, cost: 0.07 });
-    assert.deepEqual(body.daily[4], { date: '2026-06-13', steps: 1, prompts: 1, tokens: 10, cost: 0.02 });
-    assert.deepEqual(body.daily[5], { date: '2026-06-14', steps: 1, prompts: 2, tokens: 33, cost: 0.11 });
-    assert.deepEqual(body.daily[6], { date: '2026-06-15', steps: 0, prompts: 0, tokens: 0, cost: 0 });
+    assert.deepEqual(body.daily[0], { date: '2026-06-09', steps: 3, prompts: 1, tokens: 1251, tokenCompleteSteps: 3, cost: 1.251 });
+    assert.deepEqual(body.daily[1], { date: '2026-06-10', steps: 2, prompts: 0, tokens: 45, tokenCompleteSteps: 2, cost: 0.55 });
+    assert.deepEqual(body.daily[2], { date: '2026-06-11', steps: 3, prompts: 0, tokens: 102, tokenCompleteSteps: 2, cost: null });
+    assert.deepEqual(body.daily[3], { date: '2026-06-12', steps: 1, prompts: 1, tokens: 10, tokenCompleteSteps: 1, cost: 0.07 });
+    assert.deepEqual(body.daily[4], { date: '2026-06-13', steps: 1, prompts: 1, tokens: 10, tokenCompleteSteps: 1, cost: 0.02 });
+    assert.deepEqual(body.daily[5], { date: '2026-06-14', steps: 1, prompts: 2, tokens: 33, tokenCompleteSteps: 1, cost: 0.11 });
+    assert.deepEqual(body.daily[6], { date: '2026-06-15', steps: 0, prompts: 0, tokens: 0, tokenCompleteSteps: 0, cost: 0 });
   });
 
   it('ranks agent groups and retains unknown agent names', async () => {
@@ -235,8 +235,8 @@ describe('GET /api/stats/models', () => {
   it('reports the filtered daily series without prompts', async () => {
     const body = (await get('/api/stats/models?range=7d')).body as ModelsResponse;
     assert.equal(body.daily.length, 7);
-    assert.deepEqual(body.daily[0], { date: '2026-06-09', steps: 3, prompts: 0, tokens: 1251, cost: 1.251 });
-    assert.deepEqual(body.daily[5], { date: '2026-06-14', steps: 1, prompts: 0, tokens: 33, cost: 0.11 });
+    assert.deepEqual(body.daily[0], { date: '2026-06-09', steps: 3, prompts: 0, tokens: 1251, tokenCompleteSteps: 3, cost: 1.251 });
+    assert.deepEqual(body.daily[5], { date: '2026-06-14', steps: 1, prompts: 0, tokens: 33, tokenCompleteSteps: 1, cost: 0.11 });
   });
 });
 

@@ -348,11 +348,11 @@ describe('daily series and activity', () => {
 
     const series = buildDaily(daily, ['2026-06-08', '2026-06-09', '2026-06-11', '2026-06-15']);
 
-    assert.deepEqual(series[0], { date: '2026-06-08', steps: 0, prompts: 0, tokens: 0, cost: 0 }, 'a missing date is a measured zero');
-    assert.deepEqual(series[1], { date: '2026-06-09', steps: 3, prompts: 1, tokens: 1251, cost: 1.251 }, 'inclusive lower bound');
-    // The unreadable step leaves required coverage incomplete for this date.
-    assert.deepEqual(series[2], { date: '2026-06-11', steps: 3, prompts: 0, tokens: null, cost: null });
-    assert.deepEqual(series[3], { date: '2026-06-15', steps: 0, prompts: 0, tokens: 0, cost: 0 });
+    assert.deepEqual(series[0], { date: '2026-06-08', steps: 0, prompts: 0, tokens: 0, tokenCompleteSteps: 0, cost: 0 }, 'a missing date is a measured zero');
+    assert.deepEqual(series[1], { date: '2026-06-09', steps: 3, prompts: 1, tokens: 1251, tokenCompleteSteps: 3, cost: 1.251 }, 'inclusive lower bound');
+    // An unreadable step must not hide the other steps' recorded tokens.
+    assert.deepEqual(series[2], { date: '2026-06-11', steps: 3, prompts: 0, tokens: 102, tokenCompleteSteps: 2, cost: null });
+    assert.deepEqual(series[3], { date: '2026-06-15', steps: 0, prompts: 0, tokens: 0, tokenCompleteSteps: 0, cost: 0 });
   });
 
   it('reports a date with steps but no measured value as null', () => {
@@ -378,7 +378,16 @@ describe('daily series and activity', () => {
     addStepToDaily(daily, '2026-06-11', unreadable, []);
 
     assert.deepEqual(buildDaily(daily, ['2026-06-11']), [
-      { date: '2026-06-11', steps: 1, prompts: 0, tokens: null, cost: null },
+      { date: '2026-06-11', steps: 1, prompts: 0, tokens: null, tokenCompleteSteps: 0, cost: null },
+    ]);
+
+    // A measured zero in just one category is a partial zero, not unavailable
+    // and not fully reported. Positive partial measurements must also survive.
+    addStepToDaily(daily, '2026-06-12', { ...unreadable, input: 0 }, [0]);
+    addStepToDaily(daily, '2026-06-13', { ...unreadable, input: 42 }, [42]);
+    assert.deepEqual(buildDaily(daily, ['2026-06-12', '2026-06-13']), [
+      { date: '2026-06-12', steps: 1, prompts: 0, tokens: 0, tokenCompleteSteps: 0, cost: null },
+      { date: '2026-06-13', steps: 1, prompts: 0, tokens: 42, tokenCompleteSteps: 0, cost: null },
     ]);
   });
 
