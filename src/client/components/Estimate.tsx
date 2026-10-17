@@ -7,8 +7,15 @@ function unpricedLabel(steps: number): string {
 
 /** Kept visually separate from recorded cost, with explicit subtotal status. */
 export function EstimateValue({ estimate }: { estimate: CostEstimate | undefined }): React.ReactElement {
-  const title = estimate === undefined ? undefined : `${estimate.status} · ${unpricedLabel(estimate.unpricedSteps)}${estimate.catalog.updatedAt === null ? '' : ` · Catalog ${formatDateTime(Date.parse(estimate.catalog.updatedAt))}`}`;
-  return <span className="num" title={title}>{formatCost(estimate?.cost)}{estimate?.status === 'partial' ? <span className="cell-secondary">Partial subtotal</span> : null}</span>;
+  const partial = estimate?.status === 'partial';
+  const value = formatCost(estimate?.cost);
+  const title = estimate === undefined ? undefined : `${partial ? 'Partial subtotal' : estimate.status} · ${unpricedLabel(estimate.unpricedSteps)}${estimate.catalog.updatedAt === null ? '' : ` · Catalog ${formatDateTime(Date.parse(estimate.catalog.updatedAt))}`}`;
+  return (
+    <span className="num" title={title} aria-label={partial ? `${value} (partial subtotal)` : undefined}>
+      {value}
+      {partial ? <span className="partial-mark" aria-hidden="true">*</span> : null}
+    </span>
+  );
 }
 
 export function EstimateStat({ estimate }: { estimate: CostEstimate }): React.ReactElement {
