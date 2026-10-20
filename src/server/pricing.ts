@@ -1,4 +1,4 @@
-/** Offline pricing only. Read afresh inside the statistics request transaction. */
+/** Preserve recorded costs; price recorded-zero steps offline within the read transaction. */
 import type { CostEstimate, EstimateUnpricedReason, PricingCatalogMeta } from '../shared/api.ts';
 import type { QueryRunner, StepRow } from './metrics.ts';
 
@@ -61,6 +61,10 @@ const ultrafastMultipliers: Readonly<Record<string, number>> = {
 };
 
 function priceStep(step: StepRow, catalog: PricingCatalog): number | EstimateUnpricedReason {
+  // Recorded amounts take precedence over today's catalog, including its tiers.
+  // Only an explicit recorded zero opts into API-equivalent pricing.
+  if (step.cost === null || !Number.isFinite(step.cost) || step.cost < 0) return 'missing-cost';
+  if (step.cost > 0) return step.cost;
   const tokens = [step.input, step.output, step.reasoning, step.cacheRead, step.cacheWrite];
   if (tokens.some((value) => value === null || !Number.isFinite(value) || value < 0)) return 'missing-tokens';
   if (step.provider === null || step.model === null) return 'no-model-price';
@@ -139,7 +143,7 @@ function priceStep(step: StepRow, catalog: PricingCatalog): number | EstimateUnp
 export function estimateCost(steps: readonly StepRow[], catalog: PricingCatalog): CostEstimate {
   let cost = 0;
   let pricedSteps = 0;
-  const reasons: CostEstimate['unpricedByReason'] = { 'no-model-price': 0, 'missing-tokens': 0, 'missing-rate': 0, 'ambiguous-tier': 0 };
+  const reasons: CostEstimate['unpricedByReason'] = { 'missing-cost': 0, 'no-model-price': 0, 'missing-tokens': 0, 'missing-rate': 0, 'ambiguous-tier': 0 };
   const models = new Map<string, { provider: string | null; model: string | null; steps: number }>();
   for (const step of steps) {
     const price = priceStep(step, catalog);
@@ -151,7 +155,7 @@ export function estimateCost(steps: readonly StepRow[], catalog: PricingCatalog)
     models.set(key, entry);
   }
   const unpricedModels = [...models.values()].sort((a, b) => b.steps - a.steps || JSON.stringify([a.provider, a.model]).localeCompare(JSON.stringify([b.provider, b.model])));
-  const available = catalog.meta.available && (pricedSteps > 0 || steps.length === 0);
+  const available = pricedSteps > 0 || steps.length === 0;
   return {
     status: !available ? 'unavailable' : pricedSteps === steps.length ? 'complete' : 'partial',
     cost: available ? cost : null,

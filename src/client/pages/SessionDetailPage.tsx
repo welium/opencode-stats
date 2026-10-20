@@ -41,7 +41,7 @@ const STEP_COLUMNS: readonly ColumnSpec[] = [
   { key: 'model', label: 'Model' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
-  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
+  { key: 'estimate', label: 'Cost with estimates', align: 'right' },
   { key: 'errors', label: 'Errors' },
   { key: 'tools', label: 'Tools' },
 ];

@@ -16,6 +16,7 @@ describe('Phase 4 real HTTP, read-only transactions and privacy', () => {
     createPhase4Fixture(path);
     const adapter = createDatabaseAdapter({ path, pathSource: 'flag' });
     const writer = new DatabaseSync(path);
+    writer.exec("UPDATE session_message SET data = json_set(data, '$.cost', 0) WHERE id = 'm1'");
     const server = await startHttpServer(createDashboardServer({ database: adapter, staticRoot: join(dir, 'static'), logger: { info() {}, error() {} } }));
     const get = async <T>(endpoint: string): Promise<T> => {
       const response = await fetchJson(`${server.url}${endpoint}`);
@@ -27,20 +28,20 @@ describe('Phase 4 real HTTP, read-only transactions and privacy', () => {
     try {
       const overview = await get<OverviewResponse>('/api/stats/overview?range=all');
       assert.equal(overview.usage.steps, 2);
-      assert.equal(overview.usage.cost.value, 14);
+      assert.equal(overview.usage.cost.value, 7);
       assert.equal(overview.estimate.status, 'complete');
-      assert.equal(overview.estimate.cost, .0073);
-      assert.equal(overview.dailyEstimates.reduce((sum, row) => sum + (row.estimate.cost ?? 0), 0), .0073);
-      assert.equal(overview.agents[0]?.estimate?.cost, .0073);
+      assert.equal(overview.estimate.cost, 7 + .00365);
+      assert.equal(overview.dailyEstimates.reduce((sum, row) => sum + (row.estimate.cost ?? 0), 0), 7 + .00365);
+      assert.equal(overview.agents[0]?.estimate?.cost, 7 + .00365);
       const models = await get<ModelsResponse>('/api/stats/models?range=all');
-      assert.equal(models.models.reduce((sum, row) => sum + row.estimate.cost!, 0), .0073);
+      assert.equal(models.models.reduce((sum, row) => sum + row.estimate.cost!, 0), 7 + .00365);
       const projects = await get<ProjectsResponse>('/api/stats/projects?range=all');
-      assert.equal(projects.projects[0]?.estimate.cost, .0073);
+      assert.equal(projects.projects[0]?.estimate.cost, 7 + .00365);
       const sessions = await get<SessionsResponse>('/api/sessions?range=all');
-      assert.equal(sessions.sessions[0]?.estimate.cost, .0073);
+      assert.equal(sessions.sessions[0]?.estimate.cost, 7 + .00365);
       const detail = await get<SessionDetailResponse>('/api/sessions/s?range=all');
-      assert.equal(detail.estimate.cost, .0073);
-      assert.equal(detail.steps.entries.reduce((sum, row) => sum + row.estimate.cost!, 0), .0073);
+      assert.equal(detail.estimate.cost, 7 + .00365);
+      assert.equal(detail.steps.entries.reduce((sum, row) => sum + row.estimate.cost!, 0), 7 + .00365);
       const filtered = await get<OverviewResponse>('/api/stats/overview?range=all&projectId=missing');
       assert.equal(filtered.estimate.steps, 0);
       assert.equal(filtered.estimate.cost, 0);
@@ -50,7 +51,7 @@ describe('Phase 4 real HTTP, read-only transactions and privacy', () => {
       setPhase4Catalog(writer, 'partial');
       const partial = await get<OverviewResponse>('/api/stats/overview?range=all');
       assert.equal(partial.estimate.status, 'partial');
-      assert.equal(partial.estimate.cost, .00365);
+      assert.equal(partial.estimate.cost, 7);
       assert.equal(partial.dailyEstimates.find((row) => row.estimate.steps > 0)?.estimate.status, 'partial');
       assert.equal(partial.estimate.unpricedSteps, 1);
       assert.equal(partial.estimate.unpricedModels[0]?.model, 'second');
@@ -58,8 +59,8 @@ describe('Phase 4 real HTTP, read-only transactions and privacy', () => {
 
       setPhase4Catalog(writer, 'complete', 4);
       const updated = await get<OverviewResponse>('/api/stats/overview?range=all');
-      assert.equal(updated.estimate.cost, .0097);
-      assert.equal(updated.dailyEstimates.reduce((sum, row) => sum + (row.estimate.cost ?? 0), 0), .0097);
+      assert.equal(updated.estimate.cost, 7 + .00485);
+      assert.equal(updated.dailyEstimates.reduce((sum, row) => sum + (row.estimate.cost ?? 0), 0), 7 + .00485);
       assert.notEqual(updated.estimate.catalog.updatedAt, overview.estimate.catalog.updatedAt);
       assert.deepEqual(updated.usage, overview.usage);
 
@@ -68,11 +69,16 @@ describe('Phase 4 real HTTP, read-only transactions and privacy', () => {
         if (mode === 'missing') writer.exec('DELETE FROM kv');
         if (mode === 'absent-table') writer.exec('DROP TABLE kv');
         const unavailable = await get<OverviewResponse>('/api/stats/overview?range=all');
-        assert.equal(unavailable.estimate.status, 'unavailable');
-        assert.equal(unavailable.estimate.cost, null);
-        assert.ok(unavailable.dailyEstimates.every((row) => row.estimate.status === 'unavailable'));
+        assert.equal(unavailable.estimate.status, 'partial');
+        assert.equal(unavailable.estimate.cost, 7);
+        assert.ok(unavailable.dailyEstimates.filter((row) => row.estimate.steps > 0).every((row) => row.estimate.status === 'partial'));
         assert.deepEqual(unavailable.usage, overview.usage);
       }
+      writer.exec("UPDATE session_message SET data = json_set(data, '$.cost', 7) WHERE id = 'm1'");
+      const paid = await get<OverviewResponse>('/api/stats/overview?range=all');
+      assert.equal(paid.estimate.catalog.available, false);
+      assert.equal(paid.estimate.status, 'complete');
+      assert.equal(paid.estimate.cost, 14);
     } finally {
       await server.close(); writer.close(); adapter.close(); removeTempDir(dir);
     }

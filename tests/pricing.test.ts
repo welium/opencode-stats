@@ -5,7 +5,7 @@ import type { StepRow } from '../src/server/metrics.ts';
 
 function step(overrides: Partial<StepRow> = {}): StepRow {
   return { id: 'a', sessionId: 's', seq: 1, timeCreated: 1, projectId: 'p', unreadable: false,
-    cost: 77, input: 600, output: 200, reasoning: 50, cacheRead: 300, cacheWrite: 100,
+    cost: 0, input: 600, output: 200, reasoning: 50, cacheRead: 300, cacheWrite: 100,
     provider: 'provider', model: 'model', agent: 'build', hasError: false, ...overrides };
 }
 
@@ -30,7 +30,43 @@ describe('offline estimates', () => {
     assert.equal(result.status, 'complete');
     assert.equal(result.pricedSteps, 1);
     assert.equal(result.catalog.updatedAt, '2023-11-14T22:13:20.000Z');
+    assert.equal(original.cost, 0);
+  });
+
+  it('uses positive recorded costs without requiring catalog, model, or token measurements', () => {
+    const original = step({ cost: 77, provider: null, model: null, input: null });
+    for (const pricing of [parseCatalog(null), catalog(rates)]) {
+      const result = estimateCost([original], pricing);
+      assert.equal(result.cost, 77);
+      assert.equal(result.status, 'complete');
+      assert.equal(result.pricedSteps, 1);
+    }
     assert.equal(original.cost, 77);
+    // A current long-context tier must not reprice a historical paid step.
+    assert.equal(estimateCost([step({ cost: .107302, input: 2977, cacheRead: 199936 })],
+      catalog({ ...rates, tiers: [{ tier: { type: 'context', size: 200000 }, input: 4, output: 12, cache_read: 1, cache_write: 0 }] })).cost, .107302);
+  });
+
+  it('combines recorded paid steps and zero-cost estimates per step, not per model', () => {
+    const result = estimateCost([step({ cost: 7 }), step()], catalog(rates));
+    assert.equal(result.cost, 7 + .00365);
+    assert.equal(result.status, 'complete');
+    assert.equal(result.pricedSteps, 2);
+    const partial = estimateCost([step({ cost: 7 }), step()], parseCatalog(null));
+    assert.equal(partial.cost, 7);
+    assert.equal(partial.status, 'partial');
+    assert.equal(partial.unpricedByReason['no-model-price'], 1);
+    assert.deepEqual(estimateCost([], parseCatalog(null)).status, 'complete');
+    assert.equal(estimateCost([], parseCatalog(null)).cost, 0);
+  });
+
+  it('does not treat missing or invalid recorded costs as free usage', () => {
+    for (const cost of [null, -1, Infinity, NaN]) {
+      const result = estimateCost([step({ cost })], catalog(rates));
+      assert.equal(result.cost, null);
+      assert.equal(result.status, 'unavailable');
+      assert.equal(result.unpricedByReason['missing-cost'], 1);
+    }
   });
 
   it('keeps explicit free rates, requires no rates for zero categories, and does not default missing positive rates', () => {

@@ -173,7 +173,7 @@ export function SessionsPage(props: PageProps): React.ReactElement {
                         onSort={(key) => toggleSort(key, column.initialDir)}
                       />
                     ))}
-                    <th scope="col" data-align="right">API-equivalent estimate</th>
+                    <th scope="col" data-align="right">Cost with estimates</th>
                   </tr>
                 </thead>
                 <tbody>

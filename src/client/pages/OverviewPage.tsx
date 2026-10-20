@@ -48,7 +48,7 @@ const AGENT_COLUMNS: readonly ColumnSpec[] = [
   { key: 'steps', label: 'Steps', align: 'right' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
-  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
+  { key: 'estimate', label: 'Cost with estimates', align: 'right' },
 ];
 
 const MODEL_COLUMNS: readonly ColumnSpec[] = [
@@ -57,7 +57,7 @@ const MODEL_COLUMNS: readonly ColumnSpec[] = [
   { key: 'sessions', label: 'Sessions', align: 'right' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
-  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
+  { key: 'estimate', label: 'Cost with estimates', align: 'right' },
 ];
 
 const PROJECT_COLUMNS: readonly ColumnSpec[] = [
@@ -66,7 +66,7 @@ const PROJECT_COLUMNS: readonly ColumnSpec[] = [
   { key: 'steps', label: 'Steps', align: 'right' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
-  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
+  { key: 'estimate', label: 'Cost with estimates', align: 'right' },
 ];
 
 /** Top-of-page breakdowns, capped so Overview stays a summary. */

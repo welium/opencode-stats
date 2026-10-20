@@ -6,8 +6,9 @@ hosted service, no telemetry, and no runtime dependency downloads. All browser
 assets are bundled locally.
 
 The dashboard includes Overview, Models, Projects, Tools, Sessions with statistical
-detail, and Errors. Recorded assistant-step cost and offline API-equivalent
-estimates are separate values.
+detail, and Errors. Recorded assistant-step cost and cost with estimates are
+separate values. Cost with estimates preserves positive recorded costs and uses
+offline API-equivalent estimates only for steps recorded at exactly $0.
 
 ## Requirements
 
@@ -213,10 +214,24 @@ stable message/kind tie-breaks. Type/model groups are bounded to the top 100.
 Estimates read the optional `kv` entry `models-dev:catalog` on every usage request,
 inside the response's read transaction. Its JSON envelope must contain a numeric
 `updatedAt` and a JSON-string `body` holding the provider catalog. Missing tables,
-missing entries, or malformed catalogs leave recorded usage available. No catalog
+missing entries, or malformed catalogs leave recorded usage and positive recorded
+costs in the cost-with-estimates total available. No catalog
 refresh, provider discovery, or external request is performed.
 
-Provider/model keys and explicit IDs must match exactly, except for billing
+Cost with estimates is calculated per assistant step, not per model or session:
+
+- Positive recorded cost is used unchanged, without requiring model prices or
+  token measurements. Current catalog rates and context tiers never reprice it.
+- Exactly $0 recorded cost uses the offline API-equivalent calculation below.
+  Zero is the eligibility rule, not proof that the step was free or subscribed.
+- Missing or invalid recorded cost remains unpriced; it is not assumed to be $0.
+
+This preserves historical Copilot/runtime pricing while estimating the API value
+of zero-cost usage, including free and subscription models. Mixed groups sum
+recorded paid costs and estimates for their zero-cost steps once each. Do not add
+this total to recorded cost. The UI labels it **Cost with estimates**.
+
+For zero-cost steps, provider/model keys and explicit IDs must match exactly, except for billing
 suffixes: `-free` uses the paid base model's rates, even if
 the free variant has explicit zero prices. Only `opencode` and `opencode-go`
 search both providers: the original provider takes precedence, and the other is
@@ -231,7 +246,7 @@ remain unpriced; recorded model IDs and costs are unchanged. Multiplier source:
 2026-10-17.
 
 Prices are finite,
-nonnegative USD per million tokens. Each step is priced as
+nonnegative USD per million tokens. Each recorded-zero step is estimated as
 `(input*inputRate + (output+reasoning)*outputRate + cacheRead*cacheReadRate + cacheWrite*cacheWriteRate) / 1,000,000`.
 Context is `input + cacheRead + cacheWrite`. Base prices and `tiers` are supported;
 the largest context threshold **strictly less** than context applies. Equality
@@ -239,16 +254,18 @@ retains the previous tier/base. Tier prices replace, not inherit from, base pric
 The legacy `context_over_200k` field is ignored. Invalid tier descriptors and
 duplicate applicable thresholds are rejected rather than guessed.
 
-All five token categories must be measured. A positive category requires its
+For zero-cost estimates, all five token categories must be measured. A positive category requires its
 rate; zero-token categories do not. Explicit zero prices are valid. Missing or
 invalid rates produce unpriced steps, not free usage. Responses distinguish
 `complete`, `partial` (priced subtotal), and `unavailable`, with unpriced step/model
 counts and catalog timestamp. Unpriced identity lists are bounded to 50 rows.
-Daily estimates are returned separately from the recorded daily series; the
-Overview chart offers an Estimate metric, and chart data tables keep both costs
+Daily costs with estimates are returned separately from the recorded daily series;
+the Overview chart offers a Cost with estimates metric, and chart data tables keep both costs
 separate. Partial series are labeled as priced subtotals.
 Catalog bodies and arbitrary digest strings are never returned. Current cached
-prices are not historical invoices and are never added to recorded cost.
+prices are not historical invoices. Positive recorded costs remain usable without
+a catalog; unavailable zero-cost estimates produce a partial subtotal when paid
+steps are present. An empty selection is a complete $0 total without a catalog.
 
 Usage describes assistant-message steps only, excludes copied pre-fork history,
 and does not add separate compaction events or session rollups. It is not full
@@ -304,8 +321,9 @@ without restarting. Read failures display an error instead of stale fresh values
 
 The accounting reference is pinned to OpenCode v2.0.28. This dashboard excludes
 separate compaction usage, combines model variants, retains unknown identities,
-and leaves zero-denominator rates unavailable rather than zero. Estimates use
-current offline rates with stricter missing-rate coverage, not billing invoices.
+and leaves zero-denominator rates unavailable rather than zero. Cost with estimates
+preserves positive recorded costs and prices only recorded-zero steps using current
+offline rates with stricter missing-rate coverage, not billing invoices.
 Compare only identical snapshots, ranges, server timezone and filters; a live CLI
 and a frozen backup do not describe the same selection. The CLI is a development
 cross-check, never a runtime data source.

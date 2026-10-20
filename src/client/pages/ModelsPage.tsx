@@ -34,7 +34,7 @@ const COLUMNS: readonly ColumnSpec[] = [
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cacheRate', label: 'Cache rate', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
-  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
+  { key: 'estimate', label: 'Cost with estimates', align: 'right' },
 ];
 
 function modelLabel(row: ModelUsageRow): string {

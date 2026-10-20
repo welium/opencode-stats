@@ -34,7 +34,7 @@ async (page) => {
   await hoverDay(dates.length - 1);
   check(await row('Tokens').innerText() === '—', 'Incomplete tokens must remain unavailable');
   check(await row('Recorded cost').innerText() === '—', 'Incomplete cost must remain unavailable');
-  check((await row('API-equivalent estimate').innerText()).includes('Partial subtotal'), 'Partial estimate must be labeled');
+  check((await row('Cost with estimates').innerText()).includes('Partial subtotal'), 'Partial estimate must be labeled');
   check(await row('Steps').innerText() === '2', 'Daily steps shown');
   await page.screenshot({ path: '/tmp/opencode/chart-hover/partial-tooltip.png' });
   await page.mouse.move(0, 0);
@@ -47,7 +47,7 @@ async (page) => {
   await page.keyboard.press('ArrowLeft');
   check(await row('Tokens').innerText() === '100', 'Keyboard selects preceding date');
   check(await row('Recorded cost').innerText() === '$3.00', 'Recorded cost stays separate');
-  check(await row('API-equivalent estimate').innerText() === '$0.0002', 'Complete estimate shown');
+  check(await row('Cost with estimates').innerText() === '$0.0002', 'Complete estimate shown');
   await page.keyboard.press('Home');
   check(await row('Tokens').innerText() === '0', 'Measured zero is not unavailable');
   check(await row('Recorded cost').innerText() === '$0.00', 'Zero recorded cost shown');
@@ -67,7 +67,7 @@ async (page) => {
   await page.getByRole('button', { name: 'Refresh statistics' }).click();
   await page.waitForFunction(() => !document.querySelector('[aria-label="Refresh statistics"]').disabled);
   await hoverDay(dates.length - 1);
-  check(await row('API-equivalent estimate').innerText() === '—', 'Unavailable estimate shown as dash');
+  check(await row('Cost with estimates').innerText() === '—', 'Unavailable estimate shown as dash');
   await page.unroute('**/api/stats/overview?*');
 
   // Tooltips stay within the plot at either edge, including 320px screens.

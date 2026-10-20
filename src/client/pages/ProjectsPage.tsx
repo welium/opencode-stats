@@ -32,7 +32,7 @@ const COLUMNS: readonly ColumnSpec[] = [
   { key: 'steps', label: 'Steps', align: 'right' },
   { key: 'tokens', label: 'Tokens', align: 'right' },
   { key: 'cost', label: 'Recorded cost', align: 'right' },
-  { key: 'estimate', label: 'API-equivalent estimate', align: 'right' },
+  { key: 'estimate', label: 'Cost with estimates', align: 'right' },
 ];
 
 function sortValue(row: ProjectUsageRow, key: string): SortValue {

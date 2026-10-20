@@ -156,7 +156,7 @@ export interface UsageCoverage {
 }
 
 // ---------------------------------------------------------------------------
-// Offline API-equivalent estimates (§2 verified accounting, §7 Phase 4)
+// Recorded costs with offline API-equivalent estimates for zero-cost steps
 // ---------------------------------------------------------------------------
 
 /** State of the optional local pricing catalog used for estimates. */
@@ -177,12 +177,13 @@ export type EstimateStatus = 'complete' | 'partial' | 'unavailable';
 
 /**
  * Why one counted step could not be priced. Every unpriced step gets exactly one
- * reason: `no-model-price` (unknown provider/model or a rejected price entry),
+ * reason: `missing-cost` (recorded cost missing, negative, or not finite),
+ * `no-model-price` (unknown provider/model or a rejected price entry),
  * `missing-tokens` (a token category is missing, negative, or not finite),
  * `missing-rate` (a required rate for a positive category is missing or invalid),
  * `ambiguous-tier` (invalid tier descriptors or duplicate applicable thresholds).
  */
-export type EstimateUnpricedReason = 'no-model-price' | 'missing-tokens' | 'missing-rate' | 'ambiguous-tier';
+export type EstimateUnpricedReason = 'missing-cost' | 'no-model-price' | 'missing-tokens' | 'missing-rate' | 'ambiguous-tier';
 
 /** A provider/model identity with at least one unpriced step. */
 export interface UnpricedModelRow {
@@ -192,8 +193,8 @@ export interface UnpricedModelRow {
 }
 
 /**
- * An offline API-equivalent estimate for one usage group. This is a separate
- * value that is never added to, or mixed with, recorded cost (§7 Phase 4).
+ * Positive recorded costs plus offline API-equivalent estimates for steps whose
+ * recorded cost is exactly zero. Never add this total to sibling recorded usage.
  */
 export interface CostEstimate {
   status: EstimateStatus;
@@ -265,7 +266,7 @@ export interface OverviewResponse {
   /** Assistant errors: steps with a non-null `error`. */
   assistantErrors: number;
   usage: UsageTotals;
-  /** Offline API-equivalent estimate for the same steps as `usage`. */
+  /** Recorded costs with API estimates for zero-cost steps in `usage`. */
   estimate: CostEstimate;
   activity: ActivitySummary;
   daily: DailyActivityPoint[];
@@ -283,7 +284,7 @@ export interface ModelUsageRow {
   sessions: number;
   usage: UsageTotals;
   /**
-   * API-equivalent estimate for this model's steps. Kept separate from `usage`
+   * Recorded costs with API estimates for this model's zero-cost steps. Separate from `usage`
    * so an estimate can never be read as, or added to, recorded cost.
    */
   estimate: CostEstimate;
@@ -308,7 +309,7 @@ export interface ProjectUsageRow {
   sessions: number;
   steps: number;
   usage: UsageTotals;
-  /** API-equivalent estimate for this project's steps; never added to `usage`. */
+  /** Recorded costs with API estimates for zero-cost steps; never added to `usage`. */
   estimate: CostEstimate;
 }
 
@@ -372,7 +373,7 @@ export interface SessionListRow {
   prompts: number;
   steps: number;
   usage: UsageTotals;
-  /** API-equivalent estimate for this session's in-range steps. */
+  /** Recorded costs with API estimates for this session's zero-cost steps. */
   estimate: CostEstimate;
 }
 
